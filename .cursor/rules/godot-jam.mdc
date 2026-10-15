@@ -1,0 +1,28 @@
+---
+description: Godot 4.7 jam kuralları. Dört kişi ayrı AI kullanırken sürüm, dosya sahipliği ve kapsam.
+alwaysApply: true
+---
+
+# CIVIL GAME JAM — Godot
+
+Godot 4.7.2, yalnızca GDScript. C# ve Godot 3 sözdizimi yazma.
+
+- `CharacterBody2D` kullan. `KinematicBody2D` yazma.
+- `@export` ve `@onready` kullan. Eski `export` / `onready` yazma.
+- `await` kullan. `yield` yazma.
+- Hareket: `velocity` yaz, sonra `move_and_slide()`. Argüman verme.
+
+```gdscript
+velocity = direction * speed
+move_and_slide()
+```
+
+Yalnızca kullanıcının bu turda adlandırdığı klasördeki dosyaları değiştir. `project.godot`, `export_presets.cfg` ve autoload dosyalarına kullanıcı açıkça istemeden dokunma.
+
+Başka bir üyenin klasöründeki sahneyi, scripti veya asseti düzenleme. Ortak bir dosya gerekiyorsa dur ve söyle.
+
+İstenen tek işi yap. Envanter, diyalog, skill tree veya kayıt sistemi ekleme. Tüm projeyi yeniden yazma.
+
+Tuş kodunu scripte gömme. Projedeki input action adlarını kullan.
+
+Lisansı yeniden dağıtıma izin vermeyen üçüncü taraf dosya ekleme. Parola ve erişim anahtarı yazma.
