@@ -5,6 +5,8 @@ alwaysApply: true
 
 # CIVIL GAME JAM — Godot
 
+Asıl kurallar repo kökündeki `AGENTS.md` dosyasındadır. Onu uygula.
+
 Godot 4.7.2, yalnızca GDScript. C# ve Godot 3 sözdizimi yazma.
 
 - `CharacterBody2D` kullan. `KinematicBody2D` yazma.
