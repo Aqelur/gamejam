@@ -18,54 +18,86 @@ extends Node3D
 ##   Behind (turn around): three tall windows with curtains and two flags.
 ##
 ## Hold the right mouse button and move the mouse to look around from the chair.
+## When a proposal lands on the desk the view swoops down over the paper (a
+## bird's-eye close-up with both stamps in reach) and goes back to the seated
+## view once it is stamped.
 ##
-## Visitors: while the game runs, aides, Secret Service agents, generals,
-## staffers and a steward come in through the main door and the side door,
-## do something (brief the president, stand guard, browse the books, warm up
-## at the fire, look at a painting, bring coffee) and leave again. The doors
-## swing open for them; a hallway lies behind the main door and an anteroom
-## behind the side door. See office_traffic.gd and office_visitor.gd.
+## Gameplay loop: an aide, staffer or general comes in with a proposal and
+## stands across the desk. The proposal slides onto the paper in front of you.
+## Pick up a stamp (left mouse: drag it, or click it and click again) and hit
+## the paper: APPROVED on the left, DENIED on the right. The visitor bows or
+## shakes their head and leaves, the paper goes off the desk, and a while later
+## the next one comes in. Now and then a steward brings a coffee or collects the
+## cup. The doors swing open for them; a hallway lies behind the main door and
+## an anteroom behind the side door. See office_traffic.gd, office_visitor.gd
+## and proposal_desk.gd.
 ##
 ## Hooks for combining later:
+##   proposal_presented(number)          a new proposal is on the paper
+##   proposal_stamped(number, approved)  the player stamped it
+##   proposal_texts    placeholder bodies for the paper, used in turn
 ##   camera            the seated first-person Camera3D
 ##   paper             the paper Node3D on the desk (top surface at y = 0)
-##   set_paper_text()  show a directive on the paper
+##   stamps            the two stamp Node3Ds (meta "approved": bool)
+##   set_paper_text()  change the text on the paper
 ##   use_own_environment = false  when the main scene already has a WorldEnvironment
 ##   traffic           the visitor director (null in the editor or when visitors are off)
+##   desk              the stamping logic, proposal_desk.gd (null in the editor)
 ##   set_door_open()   swing a door ("MainDoor" / "SideDoor") between 0 (shut) and 1 (open)
+
+## A new proposal has slid onto the paper. number counts from 1.
+signal proposal_presented(number: int)
+## The player stamped the proposal on the paper.
+signal proposal_stamped(number: int, approved: bool)
 
 @export var use_own_environment := true:
 	set(v):
 		use_own_environment = v
 		_queue_rebuild()
 ## Heading printed at the top of the paper.
-@export var paper_title := "DIRECTIVE":
+@export var paper_title := "PROPOSAL":
 	set(v):
 		paper_title = v
-		_queue_rebuild()
+		_refresh_paper()
 ## Body text on the paper. Empty shows placeholder lines instead.
 @export_multiline var paper_text := "":
 	set(v):
 		paper_text = v
-		_queue_rebuild()
+		_refresh_paper()
+## Placeholder proposal bodies, shown one after another as visitors bring
+## them. Empty entries (or an empty list) show grey placeholder lines.
+@export_multiline var proposal_texts: Array[String] = []
 
 @export_group("Seated look")
 @export var mouse_look := true
 @export var mouse_sensitivity := 0.2
 ## How far the head can turn left/right from the desk (degrees).
 @export var max_yaw := 170.0
-@export var base_pitch := -24.0
+## Resting look: down at the desk, with the visitor across it still in view.
+@export var base_pitch := -18.0
 @export var max_pitch_up := 40.0
 @export var max_pitch_down := 30.0
-@export var fov := 62.0
+@export var fov := 70.0
+
+@export_group("Paper close-up")
+## Swoop down over the paper while a proposal waits for a stamp.
+@export var paper_closeup := true
+## Seconds the swoop down / back up takes.
+@export var closeup_time := 0.65
+## Camera tilt in the close-up: -90 looks straight down.
+@export_range(-90.0, -45.0) var closeup_pitch := -80.0
+## Distance from the paper to the camera in the close-up (metres). Smaller is
+## closer; 0.5 keeps both stamps fully in view on a 16:9 screen.
+@export var closeup_distance := 0.5
 
 @export_group("Visitors")
-## People walk in through the doors, do something and leave (only while the game runs).
+## Proposers and the coffee steward walk in (only while the game runs). When
+## off, proposals simply appear on the paper one after another.
 @export var visitors_enabled := true
-## Most visitors in the room (and its doorways) at once.
-@export_range(1, 6) var max_visitors := 3
-## Seconds between one visitor arriving and the next (random in this range).
-@export var visitor_interval := Vector2(5.0, 11.0)
+## Seconds after a stamp before the next proposer sets off (random in this range).
+@export var proposer_interval := Vector2(2.0, 5.0)
+## Seconds between coffee visits (random in this range).
+@export var coffee_interval := Vector2(35.0, 60.0)
 
 # ---------------------------------------------------------------- layout
 
@@ -77,7 +109,15 @@ const ZC := (Z_FRONT + Z_BACK) * 0.5
 const DEPTH := Z_BACK - Z_FRONT
 const DESK_Z := 0.35      # desk centre
 const DESK_TOP := 0.78    # desk writing surface height
-const EYE := Vector3(0.0, 1.22, 1.38)
+## Seated eye point: pulled in to the desk, so the paper and stamps fill the
+## lower half of the view.
+const EYE := Vector3(0.0, 1.2, 1.08)
+## The paper: A4, drawn a bit larger so it reads easily from the chair.
+const PAPER_SIZE := Vector2(0.21, 0.297) * 1.2
+const PAPER_YAW := -2.0
+## Rubber face of the stamps (x by z) and where they rest (x, z).
+const STAMP_FACE := Vector2(0.15, 0.05)
+const STAMP_SPOTS := [Vector2(-0.36, 0.64), Vector2(0.36, 0.64)]
 ## The chair back is on its own render layer and the seated camera skips it,
 ## so turning around shows the windows instead of the inside of the chair.
 const CHAIR_BACK_LAYER := 1 << 19
@@ -123,7 +163,14 @@ const PALETTE := [
 
 var camera: Camera3D
 var paper: Node3D
+## Where the paper rests on the pad (room coordinates).
+var paper_home := Vector3.ZERO
+## The two stamps, APPROVED first. Each has meta "approved".
+var stamps: Array[Node3D] = []
 var traffic: Node3D
+var desk: Node3D
+## Proposals presented so far.
+var proposal_count := 0
 ## Door name -> {"leaves": [hinge Node3D], "signs": [+1/-1], "node": door Node3D, "amount": 0..1}
 var doors := {}
 
@@ -135,6 +182,8 @@ var _fire_light: OmniLight3D
 var _fire_flames: Array[Node3D] = []
 var _t := 0.0
 var _rebuild_queued := false
+var _focus := 0.0            # 0 seated view .. 1 paper close-up
+var _focus_target := 0.0
 
 
 func _ready() -> void:
@@ -156,7 +205,9 @@ func _rebuild() -> void:
 	_mats.clear()
 	_fire_flames.clear()
 	doors.clear()
+	stamps.clear()
 	traffic = null
+	desk = null
 	# Built nodes get no owner, so they are never written into the .tscn.
 	_built = Node3D.new()
 	_built.name = "Built"
@@ -180,16 +231,28 @@ func _rebuild() -> void:
 	_build_desk()
 	_build_desk_items()
 	_build_paper()
+	_build_stamps()
 	_build_chair()
 	_build_lights()
 	_build_halls()
 	_build_camera()
-	if visitors_enabled and not Engine.is_editor_hint():
+	if Engine.is_editor_hint():
+		return
+	var d = (load("res://PresidentRoom/proposal_desk.gd") as GDScript).new()
+	d.name = "Stamping"
+	_built.add_child(d)
+	d.setup(self)
+	d.stamped.connect(_on_stamped)
+	desk = d
+	if visitors_enabled:
 		var t = (load("res://PresidentRoom/office_traffic.gd") as GDScript).new()
 		t.name = "Visitors"
 		_built.add_child(t)
 		t.setup(self)
+		t.proposer_arrived.connect(func(_v: Node3D) -> void: _next_proposal())
 		traffic = t
+	else:
+		get_tree().create_timer(0.8).timeout.connect(_next_proposal)
 
 
 # ---------------------------------------------------------------- public
@@ -210,16 +273,74 @@ func door_amount(door_name: String) -> float:
 
 
 func set_paper_text(text: String, title := "") -> void:
-	paper_text = text
 	if title != "":
 		paper_title = title
+	paper_text = text
+
+
+## Put the next placeholder proposal on the paper and slide it in.
+func _next_proposal() -> void:
+	proposal_count += 1
+	var body := ""
+	if not proposal_texts.is_empty():
+		body = proposal_texts[(proposal_count - 1) % proposal_texts.size()]
+	set_paper_text(body, "PROPOSAL #%d" % proposal_count)
+	desk.present()
+	focus_paper(true)
+	proposal_presented.emit(proposal_count)
+
+
+func _on_stamped(approved: bool) -> void:
+	proposal_stamped.emit(proposal_count, approved)
+	# a moment to see the ink up close, then back to the chair (the paper
+	# leaves the desk as the view rises, see proposal_desk.gd)
+	get_tree().create_timer(0.6).timeout.connect(focus_paper.bind(false))
+	if traffic:
+		traffic.proposal_decided(approved)
+	else:
+		get_tree().create_timer(1.8).timeout.connect(_next_proposal)
 
 
 func reset_view() -> void:
 	_yaw = 0.0
 	_pitch = base_pitch
-	if camera:
-		camera.rotation_degrees = Vector3(_pitch, _yaw, 0.0)
+	_apply_camera()
+
+
+## Swoop the view down over the paper (true) or back to the chair (false).
+func focus_paper(on: bool) -> void:
+	_focus_target = 1.0 if on and paper_closeup else 0.0
+	if on:
+		# come back up to the normal desk view, not wherever you were looking
+		_yaw = 0.0
+		_pitch = base_pitch
+		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
+## True while the view is (or is moving) over the paper.
+func is_paper_focused() -> bool:
+	return _focus > 0.0 or _focus_target > 0.0
+
+
+## Bird's-eye view of the paper, the top of the sheet at the top of the screen.
+func _paper_view() -> Transform3D:
+	var centre := Vector3(0.0, paper_home.y, paper_home.z + 0.02)
+	var b := Basis.from_euler(Vector3(deg_to_rad(closeup_pitch), 0.0, 0.0))
+	return Transform3D(b, centre + b.z * closeup_distance)
+
+
+## Place the camera between the seated look and the paper close-up.
+func _apply_camera() -> void:
+	if camera == null:
+		return
+	var seated := Transform3D(Basis.from_euler(Vector3(deg_to_rad(_pitch), deg_to_rad(_yaw), 0.0)), EYE)
+	if _focus <= 0.0:
+		camera.transform = seated
+		return
+	var k := smoothstep(0.0, 1.0, _focus)
+	var top := _paper_view()
+	camera.transform = Transform3D(seated.basis.slerp(top.basis, k), seated.origin.lerp(top.origin, k))
 
 
 # ---------------------------------------------------------------- input
@@ -227,17 +348,24 @@ func reset_view() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if Engine.is_editor_hint() or not mouse_look or camera == null:
 		return
+	# no looking around while the view is over the paper
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT:
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if event.pressed else Input.MOUSE_MODE_VISIBLE
+		var look: bool = event.pressed and not is_paper_focused()
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if look else Input.MOUSE_MODE_VISIBLE
 	elif event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		_yaw = clampf(_yaw - event.relative.x * mouse_sensitivity, -max_yaw, max_yaw)
 		_pitch = clampf(_pitch - event.relative.y * mouse_sensitivity,
 			base_pitch - max_pitch_down, base_pitch + max_pitch_up)
-		camera.rotation_degrees = Vector3(_pitch, _yaw, 0.0)
+		_apply_camera()
 
 
 func _process(delta: float) -> void:
-	if Engine.is_editor_hint() or _fire_light == null:
+	if Engine.is_editor_hint():
+		return
+	if camera and _focus != _focus_target:
+		_focus = move_toward(_focus, _focus_target, delta / maxf(closeup_time, 0.01))
+		_apply_camera()
+	if _fire_light == null:
 		return
 	_t += delta
 	var f := 0.5 + 0.5 * sin(_t * 9.0) * sin(_t * 3.7 + 1.3)
@@ -1031,34 +1159,80 @@ func _build_desk_items() -> void:
 
 func _build_paper() -> void:
 	# The paper lies on the pad, right in front of the player.
-	paper = group(_built, "Paper", Vector3(0.0, DESK_TOP + 0.007, DESK_Z + 0.26), -3.0)
-	var pw := 0.21
-	var pd := 0.297
+	paper_home = Vector3(0.0, DESK_TOP + 0.007, DESK_Z + 0.25)
+	paper = group(_built, "Paper", paper_home, PAPER_YAW)
+	_fill_paper()
+
+
+## Rebuild only what is printed on the paper (keeps the room, the visitors and
+## the paper's place on the desk as they are).
+func _refresh_paper() -> void:
+	if paper and is_instance_valid(paper):
+		_fill_paper()
+	else:
+		_queue_rebuild()
+
+
+func _fill_paper() -> void:
+	for c in paper.get_children():
+		paper.remove_child(c)
+		c.queue_free()
+	var pw := PAPER_SIZE.x
+	var pd := PAPER_SIZE.y
+	var k := pw / 0.21     # text scales with the sheet
 	box(paper, "Sheet", Vector3(pw, 0.002, pd), Vector3.ZERO, mat(PAPER, 0.0, 0.95))
 	# Text faces up; its top edge points away from the player (-Z), so it reads
 	# the right way round from the chair.
 	var top := Vector3(-90, 0, 0)
-	cyl(paper, "Emblem", 0.01, 0.0008, Vector3(0, 0.002, -pd * 0.5 + 0.025), gold(), 20)
-	label(paper, "Title", paper_title, Vector3(0, 0.0045, -pd * 0.5 + 0.056), 0.00038, INK, INK, top, 0)
-	box(paper, "Rule", Vector3(pw - 0.04, 0.0008, 0.0015), Vector3(0, 0.002, -pd * 0.5 + 0.08), mat(INK))
+	cyl(paper, "Emblem", 0.01 * k, 0.0008, Vector3(0, 0.002, -pd * 0.5 + 0.025 * k), gold(), 20)
+	label(paper, "Title", paper_title, Vector3(0, 0.0045, -pd * 0.5 + 0.056 * k), 0.00038 * k, INK, INK, top, 0)
+	box(paper, "Rule", Vector3(pw - 0.04 * k, 0.0008, 0.0015), Vector3(0, 0.002, -pd * 0.5 + 0.08 * k), mat(INK))
 	if paper_text.strip_edges() != "":
-		var body := label(paper, "Body", paper_text, Vector3(-pw * 0.5 + 0.02, 0.0045, -pd * 0.5 + 0.09), 0.00022, INK, INK, top, 0)
+		var body := label(paper, "Body", paper_text, Vector3(-pw * 0.5 + 0.02 * k, 0.0045, -pd * 0.5 + 0.09 * k), 0.00022 * k, INK, INK, top, 0)
 		body.uppercase = false
 		body.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 		body.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 		body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		body.width = (pw - 0.04) / body.pixel_size
+		body.width = (pw - 0.04 * k) / body.pixel_size
 		body.font_size = 48
 	else:
 		# placeholder lines of text
 		var line := mat(Color(0.55, 0.55, 0.58))
 		var widths := [0.16, 0.17, 0.15, 0.17, 0.12, 0.17, 0.16, 0.09]
 		for i in widths.size():
-			var lw: float = widths[i]
+			var lw: float = widths[i] * k
 			box(paper, "Line%d" % i, Vector3(lw, 0.0008, 0.004),
-				Vector3(-pw * 0.5 + 0.02 + lw * 0.5, 0.002, -pd * 0.5 + 0.095 + i * 0.016), line)
+				Vector3(-pw * 0.5 + 0.02 * k + lw * 0.5, 0.002, -pd * 0.5 + (0.095 + i * 0.016) * k), line)
 	# signature line
-	box(paper, "Signature", Vector3(0.07, 0.0008, 0.0012), Vector3(pw * 0.5 - 0.055, 0.002, pd * 0.5 - 0.03), mat(INK))
+	box(paper, "Signature", Vector3(0.07 * k, 0.0008, 0.0012), Vector3(pw * 0.5 - 0.055 * k, 0.002, pd * 0.5 - 0.03 * k), mat(INK))
+
+
+## Two rubber stamps on their ink pads, either side of the paper:
+## APPROVED (green) on the left, DENIED (red) on the right.
+func _build_stamps() -> void:
+	var tin := mat(Color(0.16, 0.16, 0.18), 0.0, 0.35, 0.6)
+	var handle := mat(WOOD_DARK, 0.0, 0.35)
+	for i in 2:
+		var approved := i == 0
+		var ink: Color = PALETTE[1] if approved else PALETTE[6]
+		var word := "APPROVED" if approved else "DENIED"
+		var at: Vector2 = STAMP_SPOTS[i]
+		var y := DESK_TOP + 0.006     # on the leather pad
+		# ink pad: a tin with the ink in it and the word printed in front
+		var pad := group(_built, "InkPad%s" % word.capitalize(), Vector3(at.x, y, at.y))
+		box(pad, "Tin", Vector3(STAMP_FACE.x + 0.04, 0.012, 0.12), Vector3.ZERO, tin)
+		box(pad, "Ink", Vector3(STAMP_FACE.x + 0.016, 0.003, STAMP_FACE.y + 0.02), Vector3(0, 0.011, -0.016),
+			mat(ink.darkened(0.35), 0.0, 0.3))
+		label(pad, "Word", word, Vector3(0, 0.0125, 0.04), 0.00034, ink.lightened(0.4), ink, Vector3(-90, 0, 0), 0)
+		# the stamp itself sits on the ink; origin at the bottom of the rubber
+		var s := group(_built, "Stamp%s" % word.capitalize(), Vector3(at.x, y + 0.014, at.y - 0.016))
+		s.set_meta("approved", approved)
+		box(s, "Rubber", Vector3(STAMP_FACE.x, 0.007, STAMP_FACE.y), Vector3.ZERO, mat(ink.darkened(0.25), 0.0, 0.9))
+		box(s, "Mount", Vector3(STAMP_FACE.x + 0.008, 0.026, STAMP_FACE.y + 0.008), Vector3(0, 0.007, 0), mat(WOOD, 0.0, 0.4))
+		box(s, "Band", Vector3(STAMP_FACE.x + 0.01, 0.005, STAMP_FACE.y + 0.01), Vector3(0, 0.026, 0), gold())
+		cyl(s, "Neck", 0.012, 0.05, Vector3(0, 0.033, 0), handle, 12, 0.016)
+		sph(s, "Knob", 0.027, Vector3(0, 0.1, 0), mat(ink, 0.0, 0.3), 16).scale = Vector3(1.0, 0.85, 1.0)
+		stamps.append(s)
 
 
 func _build_chair() -> void:

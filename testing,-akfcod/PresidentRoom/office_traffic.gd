@@ -1,19 +1,20 @@
 extends Node3D
 ## Visitor traffic for the president's office.
 ##
-## Every few seconds someone appears out of sight in the hallway (behind the
-## main door) or the anteroom (behind the side door), walks up, waits for the
-## door to swing open, comes in, does a job and leaves through one of the
-## doors again. Created by president_room.gd at runtime; everything here is in
-## the room's own coordinates (this node sits at the room's origin).
+## Two kinds of people come in, out of sight in the hallway (behind the main
+## door) or the anteroom (behind the side door). They walk up, wait for the
+## door to swing open, come in, do their job and leave through a door again.
+## Created by president_room.gd at runtime; everything here is in the room's
+## own coordinates (this node sits at the room's origin).
 ##
-## Jobs and where they happen:
-##   BRIEF   stand in front of the desk and talk to the president (aides, staffers, generals)
-##   SERVE   the steward brings a coffee to the desk, or collects the empty cup
-##   GUARD   a Secret Service agent stands watch just inside the door they used
-##   BROWSE  look along a bookcase, reaching for a book now and then
-##   WARM    warm hands at the fireplace
-##   ADMIRE  study a painting, chin in hand
+##   PROPOSER  an aide, staffer or general brings a proposal. One at a time:
+##             they stand in front of the desk, the proposal appears on the
+##             paper, and they wait there until the player stamps it. Then they
+##             react (bow for APPROVED, head shake for DENIED) and leave, and a
+##             while later the next one comes.
+##   STEWARD   now and then brings a coffee to the desk, or collects the cup.
+
+signal proposer_arrived(visitor: Node3D)
 
 const Visitor := preload("res://PresidentRoom/office_visitor.gd")
 const Role := Visitor.Role
@@ -29,8 +30,11 @@ var visitors: Array = []     # office_visitor.gd instances
 ## The coffee cup sitting on the desk, if a steward has left one.
 var desk_cup: Node3D = null
 
-var _spawn_t := 2.0
 var _next_id := 0
+## The person whose proposal is (or soon will be) on the paper.
+var proposer: Node3D = null
+var _proposer_t := 1.5     # seconds until the next proposer sets off
+var _coffee_t := 20.0      # seconds until the steward may come again
 var _doors := {}     # door name -> {"centre": Vector3, "hold": float}
 var _nodes := {}     # waypoint name -> Vector3
 var _edges := {}     # waypoint name -> Array of names
@@ -65,15 +69,11 @@ func setup(p_room) -> void:
 		_link(e[0], e[1])
 
 	# Places to do a job. "face": point to turn toward (null = the president).
+	# The proposer stands across the desk, a little right of centre so the
+	# nameplate and desk flags don't hide them; the steward serves from the left.
 	_spots = [
-		_spot("desk_l", [Act.BRIEF, Act.SERVE], Vector3(-0.5, 0, -0.72), null, ["S2"]),
-		_spot("desk_r", [Act.BRIEF], Vector3(0.5, 0, -0.72), null, ["S1"]),
-		_spot("books_l", [Act.BROWSE], Vector3(-2.75, 0, -4.55), Vector3(-2.75, 0, -7.0), ["A"]),
-		_spot("books_r", [Act.BROWSE], Vector3(2.75, 0, -4.55), Vector3(2.75, 0, -7.0), ["A", "B"]),
-		_spot("fire", [Act.WARM, Act.ADMIRE], Vector3(-3.35, 0, -3.7), Vector3(-6.0, 0, -3.7), ["L1"]),
-		_spot("cabinet", [Act.ADMIRE], Vector3(3.55, 0, 0.95), Vector3(6.0, 0, 0.95), ["E1"]),
-		_spot("guard_main", [Act.GUARD], Vector3(1.25, 0, -5.1), Vector3(0.4, 0, -2.0), ["A"], "MainDoor"),
-		_spot("guard_side", [Act.GUARD], Vector3(3.9, 0, -3.55), Vector3(1.5, 0, -2.6), ["B"], "SideDoor"),
+		_spot("propose", [Act.BRIEF], Vector3(0.3, 0, -0.75), null, ["S1", "S2"]),
+		_spot("serve", [Act.SERVE], Vector3(-0.6, 0, -0.72), null, ["S2"]),
 	]
 
 	# How to get from out of sight to just inside each door.
@@ -83,7 +83,8 @@ func setup(p_room) -> void:
 		"SideDoor": {"spawns": [Vector3(6.95, 0, -0.2), Vector3(6.6, 0, -0.1)],
 			"near": Vector3(5.6, 0, -4.4), "sill": Vector3(4.6, 0, -4.4), "inside": "B"},
 	}
-	_spawn_t = randf_range(1.0, 2.5)
+	_proposer_t = randf_range(1.0, 2.0)
+	_coffee_t = randf_range(room.coffee_interval.x, room.coffee_interval.y) * 0.6
 
 
 func _spot(n: String, acts: Array, pos: Vector3, face: Variant, links: Array, door := "") -> Dictionary:
@@ -169,11 +170,21 @@ func _process(delta: float) -> void:
 		var amount := move_toward(room.door_amount(door_name), target, delta * DOOR_SPEED)
 		room.set_door_open(door_name, amount)
 
-	_spawn_t -= delta
-	if _spawn_t <= 0.0:
-		_spawn_t = randf_range(room.visitor_interval.x, room.visitor_interval.y)
-		if visitors.size() < room.max_visitors:
-			_spawn()
+	# the next proposer sets off once the last one has gone
+	if proposer == null:
+		_proposer_t -= delta
+		if _proposer_t <= 0.0:
+			_send_proposer()
+	elif proposer.state == Visitor.State.ACT and not proposer.get_meta("presented", false):
+		proposer.set_meta("presented", true)
+		proposer_arrived.emit(proposer)
+
+	# coffee now and then
+	_coffee_t -= delta
+	if _coffee_t <= 0.0:
+		_coffee_t = randf_range(room.coffee_interval.x, room.coffee_interval.y)
+		if _count(Role.STEWARD) == 0:
+			_send_steward()
 
 
 # ================================================================ spawning
@@ -186,38 +197,31 @@ func _count(role: int) -> int:
 	return n
 
 
-func _spawn() -> void:
-	# who comes in (weights), limited to one agent, one general, one steward
-	var roles := [Role.AIDE, Role.AIDE, Role.AIDE, Role.STAFFER, Role.STAFFER, Role.STAFFER,
-		Role.AGENT, Role.AGENT, Role.GENERAL, Role.STEWARD, Role.STEWARD, Role.STEWARD]
-	roles.shuffle()
-	for role: int in roles:
-		if role in [Role.AGENT, Role.GENERAL, Role.STEWARD] and _count(role) > 0:
-			continue
-		var acts: Array = _acts_for(role)
-		acts.shuffle()
-		for act: int in acts:
-			var door: String = ["MainDoor", "SideDoor"].pick_random()
-			var spot := _free_spot(act, door)
-			if spot.is_empty() and act == Act.GUARD:
-				door = "SideDoor" if door == "MainDoor" else "MainDoor"
-				spot = _free_spot(act, door)
-			if spot.is_empty():
-				continue
-			_send_in(role, act, door, spot)
-			return
+func _send_proposer() -> void:
+	var spot := _free_spot(Act.BRIEF, "")
+	if spot.is_empty():
+		return
+	var role: int = [Role.AIDE, Role.AIDE, Role.STAFFER, Role.STAFFER, Role.GENERAL].pick_random()
+	proposer = _send_in(role, Act.BRIEF, ["MainDoor", "SideDoor"].pick_random(), spot)
+	proposer.wait_for_decision = true
+	proposer.act_time = 1.0e9   # set for real by decide()
 
 
-func _acts_for(role: int) -> Array:
-	if role == Role.AIDE:
-		return [Act.BRIEF, Act.BRIEF, Act.BROWSE, Act.ADMIRE]
-	if role == Role.STAFFER:
-		return [Act.BRIEF, Act.BROWSE, Act.ADMIRE, Act.WARM]
-	if role == Role.AGENT:
-		return [Act.GUARD]
-	if role == Role.STEWARD:
-		return [Act.SERVE]
-	return [Act.BRIEF]
+func _send_steward() -> void:
+	var spot := _free_spot(Act.SERVE, "")
+	if spot.is_empty():
+		return
+	_send_in(Role.STEWARD, Act.SERVE, ["MainDoor", "SideDoor"].pick_random(), spot)
+
+
+## The player stamped the proposal: the proposer reacts and leaves, and the
+## next one comes after a pause.
+func proposal_decided(approved: bool) -> void:
+	if proposer == null:
+		return
+	proposer.decide(approved)
+	proposer = null
+	_proposer_t = randf_range(room.proposer_interval.x, room.proposer_interval.y)
 
 
 func _free_spot(act: int, door: String) -> Dictionary:
@@ -231,7 +235,7 @@ func _free_spot(act: int, door: String) -> Dictionary:
 	return options.pick_random() if not options.is_empty() else {}
 
 
-func _send_in(role: int, act: int, door: String, spot: Dictionary) -> void:
+func _send_in(role: int, act: int, door: String, spot: Dictionary) -> Node3D:
 	var female_chance := 0.25 if role == Role.GENERAL else (0.35 if role == Role.AGENT else 0.5)
 	var v := Visitor.new()
 	v.name = "Visitor%d" % _next_id
@@ -242,14 +246,8 @@ func _send_in(role: int, act: int, door: String, spot: Dictionary) -> void:
 	v.act = act
 	v.face_camera = spot.face == null
 	v.face_point = spot.face if spot.face != null else Vector3.ZERO
-	if act == Act.BRIEF:
-		v.act_time = randf_range(7.0, 11.0)
-	elif act == Act.GUARD:
-		v.act_time = randf_range(14.0, 22.0)
-	elif act == Act.SERVE:
-		v.act_time = 4.6
-	else:
-		v.act_time = randf_range(6.0, 11.0)
+	# a proposer waits for the stamp (see office_visitor.gd decide())
+	v.act_time = 4.6 if act == Act.SERVE else randf_range(7.0, 11.0)
 	if act == Act.SERVE:
 		v.face_camera = false
 		v.face_point = Vector3(spot.pos.x, 0, 2.0)   # face the desk
@@ -269,13 +267,14 @@ func _send_in(role: int, act: int, door: String, spot: Dictionary) -> void:
 	pts.append(spot.pos)
 	doors.append("")
 	v.begin(pts, doors)
+	return v
 
 
 ## A visitor finished their job: free the spot and walk them out.
 func visitor_done(v) -> void:
 	var spot: Dictionary = v.get_meta("spot", {})
 	spot.taken = null
-	# agents and stewards leave the way they came, others pick either door
+	# spots tied to a door send people out that way, others pick either door
 	var door: String = ["MainDoor", "SideDoor"].pick_random()
 	if spot.door != "":
 		door = spot.door
@@ -307,6 +306,8 @@ func visitor_done(v) -> void:
 
 func _on_finished(v) -> void:
 	visitors.erase(v)
+	if v == proposer:
+		proposer = null
 	var spot: Dictionary = v.get_meta("spot", {})
 	if spot.get("taken") == v:
 		spot.taken = null

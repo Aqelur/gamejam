@@ -64,6 +64,10 @@ var face_point := Vector3.ZERO
 var face_camera := false
 var act_time := 8.0
 var id := 0
+## Proposer: stay at the desk until decide() is called, however long that takes.
+var wait_for_decision := false
+## 0 = no decision yet, 1 = approved, -1 = denied.
+var decision := 0
 
 # ---------------------------------------------------------------- private state
 var _i := 0
@@ -251,6 +255,15 @@ func bring_cup(yes: bool) -> void:
 		_cup.queue_free()
 		_cup = null
 
+## Proposer: the player stamped the proposal. React, then leave.
+func decide(approved: bool) -> void:
+	decision = 1 if approved else -1
+	wait_for_decision = false
+	# finish the current gesture, react, and go (_brief_pose times the reaction
+	# against act_time)
+	act_time = maxf(_state_t, 0.0) + 2.4
+
+
 ## Called by the director when the job is done.
 func leave(p_path: Array[Vector3], p_doors: Array[String]) -> void:
 	_leaving = true
@@ -285,7 +298,7 @@ func _update_act(delta: float) -> void:
 			_admire_pose(t)
 		Act.SERVE:
 			_serve_pose(t, delta)
-	if t > act_time and traffic != null and not _leaving:
+	if t > act_time and traffic != null and not _leaving and not wait_for_decision:
 		traffic.visitor_done(self)
 
 
@@ -304,13 +317,23 @@ func _brief_pose(t: float) -> void:
 			_tp.spine.x += 0.04 * k
 			return
 	var tt := t - start
+	# A proposer pitches for a few phrases, then waits quietly for the stamp,
+	# picking the pitch up again now and then.
+	var pitch := 1.0
+	if wait_for_decision or decision != 0:
+		var cycle := fposmod(tt, 16.0)
+		pitch = 1.0 - smoothstep(8.0, 9.0, cycle) * (1.0 - smoothstep(15.0, 16.0, cycle))
+		if decision != 0:
+			pitch = 0.0
 	# talk in phrases with short pauses
 	var phrase := fposmod(tt + _gesture_seed, 4.2)
-	_talking = phrase > 0.3 and phrase < 3.4 and t < act_time - 1.2
+	_talking = phrase > 0.3 and phrase < 3.4 and t < act_time - 1.2 and pitch > 0.5
 	# right hand gestures while talking
 	var g := sin(tt * 2.1 + _gesture_seed) * 0.5 + 0.5
 	var g2 := sin(tt * 3.3 + _gesture_seed * 2.0)
 	var on := smoothstep(0.0, 0.6, tt) * (1.0 - smoothstep(act_time - start - 1.6, act_time - start - 0.9, tt))
+	if wait_for_decision or decision != 0:
+		on = smoothstep(0.0, 0.6, tt) * pitch
 	if _prop and _prop.visible:
 		_hold_prop_pose(1.0)
 	else:
@@ -322,10 +345,20 @@ func _brief_pose(t: float) -> void:
 	_tp.fingers_r = Vector3(0, 0, -0.1)
 	# head bobs along with the words
 	_tp.head.x += 0.04 * sin(tt * 4.5) * (1.0 if _talking else 0.0)
-	# a small bow before leaving
+	if decision < 0:
+		# denied: shake the head, shoulders drop
+		var k := smoothstep(act_time - 2.3, act_time - 1.9, t) * (1.0 - smoothstep(act_time - 0.5, act_time, t))
+		_tp.head.y += sin(t * 11.0) * 0.32 * k
+		_tp.head.x -= 0.12 * k
+		_tp.spine.x -= 0.08 * k
+		_tp.arm_l.z -= 0.05 * k
+		_tp.arm_r.z += 0.05 * k
+		return
+	# a small bow before leaving (deeper when the proposal was approved)
+	var depth := 1.6 if decision > 0 else 1.0
 	var bow := smoothstep(act_time - 1.0, act_time - 0.6, t) * (1.0 - smoothstep(act_time - 0.3, act_time, t))
-	_tp.spine.x -= 0.28 * bow
-	_tp.head.x -= 0.25 * bow
+	_tp.spine.x -= 0.28 * bow * depth
+	_tp.head.x -= 0.25 * bow * depth
 
 
 func _guard_pose(t: float) -> void:
