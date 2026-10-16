@@ -1,0 +1,20 @@
+---
+description: İstenen iş için başka sohbete yapıştırılacak kısa prompt yaz.
+alwaysApply: true
+---
+
+# Prompt yazımı
+
+Kullanıcı bir işi başka sohbette yaptırmak için anlattığında kod yazma. Yapıştırılacak bir prompt ver.
+
+Prompta `AGENTS.md` kurallarını ve proje durumunu kopyalama. Karşı taraf o dosyayı zaten okur.
+
+Prompt yalnızca şunları söylesin:
+
+- Bu turda yapılacak tek iş
+- Dokunulacak dosyalar
+- Bitti sayılması için ekranda ne görüleceği
+
+İş kurallara uyuyorsa istisnadan bahsetme. Aykırı bir şey gerekiyorsa prompta `İstisna:` diye tek satır yaz. Örnek: ortak dosya (`project.godot`, autoload), başka bir klasör, ya da proje durumunda henüz yok denilen bir sistem.
+
+Kullanıcı işin bittiğini söyleyince dosyalara bak ve `AGENTS.md` içindeki proje durumu bölümünü güncelle. Uygulayan sohbet o bölüme dokunmasın.
