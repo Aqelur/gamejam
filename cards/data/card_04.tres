@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="CardData" format=3]
+
+[ext_resource type="Script" path="res://cards/card_data.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://cards/images/card_04.svg" id="2_image"]
+
+[resource]
+script = ExtResource("1_script")
+character_name = "Karakter 4"
+image = ExtResource("2_image")
+text = "Kart 4 metni buraya gelecek."
+left_choice = "Sol seçim 4"
+right_choice = "Sağ seçim 4"
