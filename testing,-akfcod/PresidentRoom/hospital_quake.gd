@@ -381,6 +381,11 @@ func _hide_lot_sign() -> void:
 		_hosp.set("click_to_build", false)
 	for k in ["_sign", "_sub_sign"]:
 		var s = _hosp.get(k)
+		# Once the hospital is built, buildable.gd frees its "BUILD" sign but
+		# keeps the variable pointing at it. Testing `is` on a freed object is a
+		# script error that halts the whole ending, so check it's still alive.
+		if not is_instance_valid(s):
+			continue
 		if s is Node3D:
 			(s as Node3D).visible = false
 

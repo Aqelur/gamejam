@@ -605,8 +605,10 @@ func _play_ending() -> void:
 	for play in places:
 		await play.call(_ending)
 
-	# 4. everything added up; a click starts the game again
+	# 4. everything added up, then the dead laid out in Central Park; a click
+	# starts the game again
 	_kill(_orbit)
+	_ending.set_city(_city, _fade)
 	await _ending.show_summary()
 
 

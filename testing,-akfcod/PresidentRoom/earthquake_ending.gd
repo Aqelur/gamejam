@@ -23,9 +23,14 @@ extends Node
 ##                              "of" (word after "DEAD · of N", default
 ##                              "people") and "damage_label" (default "DAMAGE")
 ##   show_tally(r)/hide_tally() the card counting up one place's toll
-##   show_summary()             the final card on black; click to play again
+##   show_summary()             the final card on black, then what the number
+##                              means (see _show_weight); click to play again
+##   set_city(city, fade)       the city and day_cycle.gd's black fade, so the
+##                              end can lay the dead out in Central Park
 
 ## When the quake hits, in seconds after midnight.
+const ParkShrouds := preload("res://PresidentRoom/park_shrouds.gd")
+
 const QUAKE_TIME := 14 * 3600 + 32 * 60
 const MAGNITUDE := 7.4
 const GOLD := Color(1.0, 0.82, 0.36)
@@ -55,6 +60,8 @@ var _brown := 0.0
 var _low := 0.0
 var _crack := 0.0
 var _clicked := false
+var _city: Node3D
+var _fade: ColorRect
 
 
 func setup(p_choices: Dictionary, ui: CanvasLayer, kicker: Label, cam: Camera3D, tile: float,
@@ -69,6 +76,12 @@ func setup(p_choices: Dictionary, ui: CanvasLayer, kicker: Label, cam: Camera3D,
 	_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 	_noise.frequency = 1.0
 	_start_sound()
+
+
+## The city (City/city.tscn) and the black fade over it, for the very end.
+func set_city(city: Node3D, fade: ColorRect) -> void:
+	_city = city
+	_fade = fade
 
 
 func approved(id: String) -> bool:
@@ -246,8 +259,6 @@ func show_summary() -> void:
 	for r in results:
 		lines.append(_label("%s   —   %s dead of %s   ·   %s" % [String(r.place), thousands(int(r.dead)),
 			thousands(int(r.residents)), money_text(float(r.damage))], _font_bold, 20, SOFT))
-	var again := _label("Click to start again", _font_bold, 18, Color(1, 1, 1, 0.6))
-	lines.append(again)
 	for l in lines:
 		l.modulate.a = 0.0
 		v.add_child(l)
@@ -256,8 +267,6 @@ func show_summary() -> void:
 	var t := create_tween()
 	t.tween_property(bg, "modulate:a", 1.0, 0.8)
 	for l in lines:
-		if l == again:
-			t.tween_interval(1.0)
 		t.tween_property(l, "modulate:a", 1.0, 0.35)
 		if l == dead_n:
 			t.tween_method(func(k: float) -> void:
@@ -265,6 +274,26 @@ func show_summary() -> void:
 				cost_n.text = money_text(total_damage() * k), 0.0, 1.0, 2.2) \
 				.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	await t.finished
+
+	# Then what the number means, body by body (skipped if nobody died).
+	var again := _label("Click to start again", _font_bold, 18, Color(1, 1, 1, 0.6))
+	again.modulate.a = 0.0
+	var total := total_dead()
+	if total > 0:
+		await get_tree().create_timer(2.8).timeout
+		var weight := await _show_weight(total, bg)
+		again.anchor_left = 0.0
+		again.anchor_right = 1.0
+		again.anchor_top = 0.95
+		again.anchor_bottom = 0.95
+		again.grow_vertical = Control.GROW_DIRECTION_BOTH
+		weight.add_child(again)
+	else:
+		v.add_child(again)
+		await get_tree().create_timer(1.0).timeout
+	var show_again := create_tween()
+	show_again.tween_property(again, "modulate:a", 1.0, 0.5)
+	await show_again.finished
 	var pulse := create_tween().set_loops()
 	pulse.tween_property(again, "modulate:a", 0.35, 0.8)
 	pulse.tween_property(again, "modulate:a", 1.0, 0.8)
@@ -273,6 +302,170 @@ func show_summary() -> void:
 		await get_tree().process_frame
 	pulse.kill()
 	get_tree().reload_current_scene()
+
+
+## After the summary: "X. X is just a number, but what does it actually
+## mean?" on black. Then Central Park, one body on the grass under a black
+## blanket, and the camera pulls back as more are laid down beside it, 4, 9,
+## 16... faster and faster until all `total` of them lie there
+## (park_shrouds.gd). Returns the overlay it built (the counter on it), for
+## the "click to start again" line. `summary` (the card on black) is freed
+## once the words cover it.
+func _show_weight(total: int, summary: Control) -> Control:
+	var screen := ColorRect.new()
+	screen.name = "Weight"
+	screen.color = Color.BLACK
+	screen.set_anchors_preset(Control.PRESET_FULL_RECT)
+	screen.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ui.add_child(screen)
+	screen.modulate.a = 0.0
+	var t := create_tween()
+	t.tween_property(screen, "modulate:a", 1.0, 1.4)
+	await t.finished
+	summary.queue_free()
+	await get_tree().create_timer(0.6).timeout
+
+	# --- the words
+	var centre := CenterContainer.new()
+	centre.set_anchors_preset(Control.PRESET_FULL_RECT)
+	centre.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	screen.add_child(centre)
+	var words := VBoxContainer.new()
+	words.alignment = BoxContainer.ALIGNMENT_CENTER
+	words.add_theme_constant_override("separation", 14)
+	words.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	centre.add_child(words)
+	var big := _label(thousands(total) + ".", _font_black, 120, RED)
+	var line1 := _label("%s is just a number," % thousands(total), _font_bold, 30, SOFT)
+	var line2 := _label("but what does it actually mean?", _font_bold, 30, Color.WHITE)
+	for l: Control in [big, line1, line2]:
+		l.modulate.a = 0.0
+		words.add_child(l)
+	t = create_tween()
+	t.tween_property(big, "modulate:a", 1.0, 0.7)
+	t.tween_interval(1.4)
+	t.tween_property(line1, "modulate:a", 1.0, 0.7)
+	t.tween_interval(1.1)
+	t.tween_property(line2, "modulate:a", 1.0, 0.9)
+	t.tween_interval(2.8)
+	t.tween_property(words, "modulate:a", 0.0, 1.0)
+
+	# meanwhile, behind the black: lay the park out
+	var field: ParkShrouds = null
+	if _city and is_instance_valid(_city) and is_instance_valid(_cam):
+		field = ParkShrouds.new()
+		_city.add_child(field)
+		if not field.setup(_city, total):
+			field.queue_free()
+			field = null
+	await t.finished
+	centre.queue_free()
+
+	# the counter, over everything
+	var over := Control.new()
+	over.name = "WeightCounter"
+	over.set_anchors_preset(Control.PRESET_FULL_RECT)
+	over.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ui.add_child(over)
+	# a soft shade along the bottom so the number reads over the bright park
+	var grad := Gradient.new()
+	grad.set_color(0, Color(0, 0, 0, 0.0))
+	grad.set_color(1, Color(0.01, 0.015, 0.03, 0.62))
+	var gtex := GradientTexture2D.new()
+	gtex.gradient = grad
+	gtex.fill_from = Vector2(0, 0)
+	gtex.fill_to = Vector2(0, 1)
+	var shade := TextureRect.new()
+	shade.texture = gtex
+	shade.stretch_mode = TextureRect.STRETCH_SCALE
+	shade.anchor_right = 1.0
+	shade.anchor_top = 0.6
+	shade.anchor_bottom = 1.0
+	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	over.add_child(shade)
+	var counter := VBoxContainer.new()
+	counter.anchor_right = 1.0
+	counter.anchor_top = 0.78
+	counter.anchor_bottom = 0.88
+	counter.grow_vertical = Control.GROW_DIRECTION_BOTH
+	counter.alignment = BoxContainer.ALIGNMENT_CENTER
+	counter.add_theme_constant_override("separation", 0)
+	counter.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	over.add_child(counter)
+	var count := _label("1", _font_black, 72, RED)
+	var lost := _label("PEOPLE LOST", _spaced(_font_bold, 6), 22, SOFT)
+	count.modulate.a = 0.0
+	lost.modulate.a = 0.0
+	counter.add_child(count)
+	counter.add_child(lost)
+
+	if field == null:
+		# no park to show: just the number
+		count.text = thousands(total)
+		t = create_tween()
+		t.tween_property(count, "modulate:a", 1.0, 0.8)
+		t.tween_property(lost, "modulate:a", 1.0, 0.8)
+		await t.finished
+		return over
+
+	# --- one body, alone on the grass
+	await get_tree().create_timer(0.5).timeout
+	var aspect := 16.0 / 9.0
+	var vs := _cam.get_viewport().get_visible_rect().size
+	if vs.y > 0.0:
+		aspect = vs.x / vs.y
+	var fov := _cam.fov
+	var place := func(n: float, creep: float) -> void:
+		var f: Array = field.frame(n, aspect, fov)
+		var eye: Vector3 = f[0]
+		var look: Vector3 = f[1]
+		_cam.look_at_from_position(eye.lerp(look, creep), look, Vector3.UP)
+	field.settle(0, 1, 1.0)
+	place.call(1.0, 0.0)
+	if _fade and is_instance_valid(_fade):
+		_fade.color.a = 0.0
+	t = create_tween().set_parallel()
+	t.tween_property(screen, "modulate:a", 0.0, 2.0)
+	t.tween_property(count, "modulate:a", 1.0, 2.0).set_delay(0.6)
+	t.tween_method(func(k: float) -> void: place.call(1.0, 0.12 * k), 0.0, 1.0, 4.6) \
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	await t.finished
+	screen.queue_free()
+
+	# --- then pull back: 4, 9, 16... each step quicker than the last
+	var all := field.count
+	var n := 1
+	var step := 0
+	while n * n < all:
+		var m := n + 1
+		if step >= 24:
+			m += int(n * 0.05)
+		var from_count := n * n
+		var to_count := mini(m * m, all)
+		var d := maxf(0.04, 1.5 * pow(0.8, step))
+		var creep := 0.12 if step == 0 else 0.0
+		t = create_tween()
+		t.tween_method(func(k: float) -> void:
+			field.settle(from_count, to_count, k)
+			place.call(lerpf(float(from_count), float(to_count), k), creep * (1.0 - k))
+			count.text = thousands(roundi(lerpf(float(from_count), float(to_count), k))), 0.0, 1.0, d) \
+			.set_trans(Tween.TRANS_SINE if step < 6 else Tween.TRANS_LINEAR).set_ease(Tween.EASE_IN_OUT)
+		await t.finished
+		step += 1
+		if m * m >= all:
+			break
+		n = m
+		if step <= 3:
+			await get_tree().create_timer(0.7 - step * 0.15).timeout
+
+	# --- all of them
+	count.text = thousands(total)
+	await get_tree().create_timer(0.9).timeout
+	t = create_tween()
+	t.tween_property(lost, "modulate:a", 1.0, 1.0)
+	t.tween_interval(2.2)
+	await t.finished
+	return over
 
 
 # ================================================================ sound
