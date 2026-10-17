@@ -58,7 +58,10 @@ extends Node
 ## the same streets twenty minutes later (police_rescue.gd): people are still
 ## alive under the rubble, and with the police station built its patrol cars
 ## go street to street dropping off officers who dig them out (and keep the
-## looters away); without one only a few neighbours dig by hand. Then
+## looters away); without one only a few neighbours dig by hand. Then one
+## office across town (room_quake.gd): with People's Awareness 50 or more the
+## worker at the desk drops under it, covers and holds on, and crawls out
+## unhurt; below that they panic and jump out of the window. Then
 ## Main Street, where a gas main bursts and a row of buildings catches fire
 ## (quake_fire.gd): with the fire station built its trucks come and put it out,
 ## without one the fire spreads down the row. Last, Central Park, the
@@ -87,6 +90,7 @@ const OldQuarterQuake := preload("res://PresidentRoom/old_quarter_quake.gd")
 const QuakeFire := preload("res://PresidentRoom/quake_fire.gd")
 const CentralParkQuake := preload("res://PresidentRoom/central_park_quake.gd")
 const PoliceRescue := preload("res://PresidentRoom/police_rescue.gd")
+const RoomQuake := preload("res://PresidentRoom/room_quake.gd")
 const HospitalQuake := preload("res://PresidentRoom/hospital_quake.gd")
 const EarthquakeEnding := preload("res://PresidentRoom/earthquake_ending.gd")
 const PROPOSALS_DIR := "res://PresidentRoom/proposals"
@@ -596,8 +600,8 @@ func _play_ending() -> void:
 	# 3. one place after another, all at the same moment. Each takes the
 	# ending, shows its place and adds its toll. Add the next places here
 	# (before the hospital: it counts the injured from the places before it).
-	var places: Array[Callable] = [_play_quake_old_quarter, _play_quake_rescue, _play_quake_fire, _play_quake_park,
-		_play_quake_hospital]
+	var places: Array[Callable] = [_play_quake_old_quarter, _play_quake_rescue, _play_quake_room, _play_quake_fire,
+		_play_quake_park, _play_quake_hospital]
 	for play in places:
 		await play.call(_ending)
 
@@ -737,6 +741,78 @@ func _play_quake_rescue(ending: EarthquakeEnding) -> void:
 	pr.quiet(0.6)
 	await _cut_to_black(0.6)
 	ending.end_place()
+
+
+## One office across town at the same moment (room_quake.gd): a worker at
+## their desk on the third floor. With People's Awareness 50 or more they drop
+## under the desk, cover and hold on while the books and the ceiling lamp come
+## down, and crawl out unhurt once it stops. Below that they panic, run for the
+## window and jump; cut to the street, where they lie on the pavement under a
+## building that never fell. Narration only: it adds nothing to the toll.
+func _play_quake_room(ending: EarthquakeEnding) -> void:
+	var rq = RoomQuake.new()
+	rq.name = "RoomQuake"
+	_city.add_child(rq)
+	if not rq.setup(ending):
+		rq.queue_free()
+		return
+	rq.shattered.connect(func() -> void: ending.kick(0.35))
+	rq.crashed.connect(func() -> void: ending.kick(0.45))
+
+	# 1. lunchtime at the desk
+	var calm: Array = rq.calm_shot()
+	_kill(_orbit)
+	_city_cam.look_at_from_position(calm[0], calm[1], Vector3.UP)
+	_glide(calm[0], calm[1], 0.05, calm[2])
+	ending.begin_place("Office Block", 0.0)
+	_caption_box.modulate.a = 1.0
+	_show_kicker()
+	_fade_in(0.8)
+	await get_tree().create_timer(0.6).timeout
+	var line: String = rq.intro_line()
+	_type_caption(line)
+	ending.rumble(0.08, 3.0)
+	await _narrate(line.replace("*", ""), null)
+
+	# 2. the ground goes: under the desk, or up and running
+	await _hide_caption()
+	ending.kick(0.8)
+	ending.rumble(1.0, RoomQuake.SHAKE_TIME)
+	rq.quake()
+	var shot: Array = rq.quake_shot()
+	_glide(shot[0], shot[1], 1.6, shot[2])
+	await get_tree().create_timer(1.0).timeout
+	line = rq.react_line()
+	_type_caption(line)
+	await _narrate(line.replace("*", ""), null)
+	var left: float = RoomQuake.SHAKE_TIME + 4.0
+	while left > 0.0 and not rq.is_done():
+		await get_tree().process_frame
+		left -= get_process_delta_time()
+	await get_tree().create_timer(0.5).timeout
+
+	# 3. afterwards: out from under the desk, or down on the pavement
+	await _hide_caption()
+	if rq.aware:
+		rq.recover()
+		var after: Array = rq.after_shot()
+		_glide(after[0], after[1], 1.8, after[2])
+	else:
+		await _cut_to_black(0.5)
+		var street: Array = rq.street_shot()
+		_kill(_orbit)
+		_city_cam.look_at_from_position(street[0], street[1], Vector3.UP)
+		_glide(street[0], street[1], 0.05, street[2])
+		_caption_box.modulate.a = 1.0
+		_fade_in(0.6)
+	await get_tree().create_timer(0.6).timeout
+	line = rq.after_line()
+	_type_caption(line)
+	await _narrate(line.replace("*", ""), null)
+	await get_tree().create_timer(1.5).timeout
+	await _cut_to_black(0.6)
+	ending.end_place()
+	rq.queue_free()
 
 
 ## Main Street: the same moment across town (quake_fire.gd). Down on the road
