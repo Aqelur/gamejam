@@ -3,7 +3,9 @@ extends Node
 ## shares. Created by day_cycle.gd (_play_ending) once the last day is over.
 ##
 ## The ending tells one moment in several places, like cutting between
-## cameras: each place (old_quarter_quake.gd first; more to come) is shown in
+## cameras: each place (old_quarter_quake.gd and its rescue,
+## police_rescue.gd, then quake_fire.gd, then central_park_quake.gd, and last
+## hospital_quake.gd, where the injured from all of them end up) is shown in
 ## turn with the quake clock ticking in the corner of the caption, starting
 ## again from about 14:32:00 each time, so they read as happening at once.
 ## Each place adds its toll (dead, damage) and shows it on a card; at the end
@@ -16,7 +18,10 @@ extends Node
 ##   begin_place(name, at)      the clock in the kicker: "14:32:04  ·  OLD QUARTER"
 ##   rumble(level, seconds)     sustained ground shake: city camera + low roar
 ##   kick(amount)               a sudden jolt on top
-##   add_result(r)              {place, residents, dead, damage}
+##   add_result(r)              {place, residents, dead, damage}, and an
+##                              optional "note" line printed under the toll,
+##                              "of" (word after "DEAD · of N", default
+##                              "people") and "damage_label" (default "DAMAGE")
 ##   show_tally(r)/hide_tally() the card counting up one place's toll
 ##   show_summary()             the final card on black; click to play again
 
@@ -175,11 +180,14 @@ func show_tally(r: Dictionary) -> void:
 	var dead_col := _column(row)
 	var dead_n := _label("0", _font_black, 64, RED)
 	dead_col.add_child(dead_n)
-	dead_col.add_child(_label("DEAD  ·  of %s people" % thousands(int(r.residents)), _spaced(_font_bold, 2), 18, SOFT))
+	dead_col.add_child(_label("DEAD  ·  of %s %s" % [thousands(int(r.residents)), String(r.get("of", "people"))],
+		_spaced(_font_bold, 2), 18, SOFT))
 	var cost_col := _column(row)
 	var cost_n := _label(money_text(0.0), _font_black, 64, SOFT)
 	cost_col.add_child(cost_n)
-	cost_col.add_child(_label("DAMAGE", _spaced(_font_bold, 2), 18, SOFT))
+	cost_col.add_child(_label(String(r.get("damage_label", "DAMAGE")), _spaced(_font_bold, 2), 18, SOFT))
+	if String(r.get("note", "")) != "":
+		box.add_child(_label(String(r.note), _spaced(_font_bold, 2), 16, GOLD))
 	box.modulate.a = 0.0
 	var t := create_tween()
 	t.tween_property(box, "modulate:a", 1.0, 0.35)

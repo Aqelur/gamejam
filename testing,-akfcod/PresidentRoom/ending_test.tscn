@@ -7,5 +7,6 @@ script = ExtResource("1_room")
 paper_title = "DIRECTIVE"
 base_pitch = -24.0
 fov = 62.0
+infrastructure = 40.0
 test_ending = true
-test_approved = Array[String](["urban_timber_bracing"])
+test_approved = Array[String](["urban_timber_bracing", "seismologist_drill", "agency_park_tents", "interior_police", "health_hospital", "contractor_hospital"])

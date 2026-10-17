@@ -159,7 +159,8 @@ enum Stat { AWARENESS, MONEY, INFRASTRUCTURE, BUREAUCRACY }
 @export var test_ending := false
 ## Proposal ids treated as approved by test_ending, e.g.
 ## "urban_timber_bracing" (Old Quarter braced), "interior_inspectors",
-## "seismologist_drill", "agency_rescue_training". Empty = everything denied.
+## "seismologist_drill", "agency_rescue_training", "agency_fire_station",
+## "agency_park_tents" (Central Park camp). Empty = everything denied.
 @export var test_approved: Array[String] = ["urban_timber_bracing"]
 
 # ---------------------------------------------------------------- layout

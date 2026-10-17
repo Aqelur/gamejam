@@ -27,8 +27,12 @@ extends Node3D
 ## to dust and almost everyone inside dies. Braced, they score around 0.25:
 ## some crack and lean, most stand, and the other choices tip the balance.
 ##
-## Deaths per building = residents * DEATH_RATE[outcome], lowered by awareness
-## and rescue crews. Damage = building value * DAMAGE_SHARE[outcome].
+## People caught per building = residents * DEATH_RATE[outcome], lowered by
+## awareness and rescue crews. Of those, TRAPPED_SHARE[outcome] are not dead
+## yet: they are buried alive under the rubble (`trapped`). Whether they get
+## dug out is decided later, by police_rescue.gd (with a police station, patrol
+## cars bring officers to dig; without one there aren't enough hands). The rest
+## die at once (`dead`). Damage = building value * DAMAGE_SHARE[outcome].
 ## All of it is fixed by setup() (seeded), so the numbers on screen always
 ## match what the player sees.
 ##
@@ -66,6 +70,9 @@ const DEATH_RATE := [0.0, 0.01, 0.12, 0.92]
 const PREPARED_SAVES := [0.0, 0.7, 0.6, 0.12]
 ## Share of those deaths avoided by trained rescue crews.
 const RESCUE_SAVES := [0.0, 0.0, 0.25, 0.1]
+## Share of the people caught who are still alive under the rubble (the rest
+## die at once). Their fate is played out in police_rescue.gd.
+const TRAPPED_SHARE := [0.0, 0.0, 0.6, 0.4]
 ## Share of the building's value lost.
 const DAMAGE_SHARE := [0.0, 0.05, 0.4, 1.0]
 ## The seismologist's drill counts as this much extra awareness (0..1).
@@ -111,6 +118,8 @@ var braced := false
 ## The totals, ready after setup().
 var residents := 0
 var dead := 0
+## Still alive under the rubble when the shaking stops (police_rescue.gd).
+var trapped := 0
 var damage := 0.0
 var razed := 0
 var damaged := 0
@@ -181,17 +190,20 @@ func setup(city: Node3D, works, ending) -> bool:
 		var rate: float = DEATH_RATE[o] * (1.0 - PREPARED_SAVES[o] * aware)
 		if rescue:
 			rate *= 1.0 - RESCUE_SAVES[o]
-		var deaths := clampi(roundi(people * rate * _rng.randf_range(0.92, 1.08)), 0, people)
+		var caught := clampi(roundi(people * rate * _rng.randf_range(0.92, 1.08)), 0, people)
+		var buried := roundi(caught * TRAPPED_SHARE[o])
+		var deaths := caught - buried
 		var value := people * VALUE_PER_RESIDENT
 		var c2 := box.get_center()
 		_plan.append({
-			"b": b, "box": box, "outcome": o, "residents": people, "dead": deaths,
+			"b": b, "box": box, "outcome": o, "residents": people, "dead": deaths, "trapped": buried,
 			"loss": value * DAMAGE_SHARE[o],
 			"delay": _flat(c2).distance_to(_flat(_epi)) / wave + _rng.randf_range(0.0, 0.25),
 			"full": false, "crack": false,
 		})
 		residents += people
 		dead += deaths
+		trapped += buried
 		damage += value * DAMAGE_SHARE[o]
 		if o == BuildingQuake.Outcome.RAZED:
 			razed += 1
@@ -270,10 +282,24 @@ func headline() -> String:
 	return "The *timber braces* held the walls up. The old buildings cracked and leaned, but most of their people made it out."
 
 
-## The result for earthquake_ending.gd.
+## The result for earthquake_ending.gd. The note leads into the rescue
+## (police_rescue.gd): how many are still alive under the rubble.
 func result() -> Dictionary:
+	var note := ""
+	if trapped > 0:
+		note = "~%s STILL ALIVE UNDER THE RUBBLE" % EarthquakeEnding.thousands(trapped)
 	return {"place": "Old Quarter", "residents": residents, "dead": dead, "damage": damage,
-		"razed": razed, "damaged": damaged, "standing": standing}
+		"razed": razed, "damaged": damaged, "standing": standing, "trapped": trapped, "note": note}
+
+
+## The buildings that trapped people: [{b, box, outcome, residents, trapped}],
+## for police_rescue.gd.
+func trapped_sites() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for e in _plan:
+		if int(e.trapped) > 0:
+			out.append(e)
+	return out
 
 
 # ================================================================ the quake
@@ -495,7 +521,7 @@ func _smoke(e: Dictionary) -> void:
 ## The ones who get out of the door in time run into the street. How many
 ## are shown follows how many survive (one little figure stands for a few).
 func _spawn_runners(e: Dictionary) -> void:
-	var alive: int = e.residents - e.dead
+	var alive: int = e.residents - e.dead - e.trapped
 	var each := 3 if e.outcome == BuildingQuake.Outcome.UNDAMAGED else 6
 	var n := mini(ceili(alive / float(each)), 4 if e.full else 2)
 	if e.outcome == BuildingQuake.Outcome.RAZED:

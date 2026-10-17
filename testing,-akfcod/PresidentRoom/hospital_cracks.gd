@@ -12,9 +12,15 @@ extends Node3D
 ## The cracks are Decals (Forward+ / Mobile renderer) with textures drawn here
 ## at runtime, so there are no image files to import. Everything is in the
 ## building's local units, like buildable.gd, so it works at any scale.
+##
+## In the earthquake ending (hospital_quake.gd) widen() tears them open:
+## every crack grows wider and longer while grit pours out, and new ones split
+## open beside them. If the building comes down they are hidden with it.
 
 ## Wall cracks as (across the back wall 0..1, up the wall 0..1).
 const WALL_SPOTS := [Vector2(0.2, 0.12), Vector2(0.58, 0.38), Vector2(0.84, 0.16)]
+## Where new cracks split open when the quake widens them.
+const EXTRA_SPOTS := [Vector2(0.4, 0.2), Vector2(0.7, 0.6), Vector2(0.08, 0.42), Vector2(0.94, 0.5)]
 const TEX := 160                 # crack texture size in pixels
 const FRAMES := 12               # growth steps per crack
 const GROW_TIME := 1.7           # seconds for one crack to reach full length
@@ -26,6 +32,12 @@ const INTEGRITY := 0.35
 
 var _rng := RandomNumberGenerator.new()
 var _cracks: Array[Dictionary] = []   # {"decal": Decal, "frames": Array, "at": Vector3}
+# the back wall, measured by setup() (building-local)
+var _fp := AABB()
+var _h := 1.5
+var _back := 0.0
+var _depth := 0.5
+var _sz := 1.0
 
 
 func _init() -> void:
@@ -47,17 +59,18 @@ func setup(building: Node3D) -> void:
 	var w := fp.size.x
 	var back := fp.position.z                 # buildings face +z (day_cycle.gd _fly_to)
 	var sz := clampf(minf(w, h) * 0.42, 0.55, 1.7)
-
 	# up the back wall: the box reaches a little way in, so a back wall that
 	# is set in from the footprint still catches it; only faces looking out
 	# the back take the decal (normal_fade)
 	var depth := maxf(fp.size.z * 0.45, 0.5)
+	_fp = fp
+	_h = h
+	_back = back
+	_depth = depth
+	_sz = sz
+
 	for s in WALL_SPOTS:
-		var k := sz * _rng.randf_range(0.85, 1.15)
-		var pos := Vector3(fp.position.x + w * s.x, clampf(h * s.y + k * 0.5, k * 0.5, h - k * 0.3),
-			back + depth * 0.5 - 0.08)
-		var d := _decal(Vector3(k, depth, k), pos, Basis(Vector3.RIGHT, -PI * 0.5))
-		_cracks.append({"decal": d, "frames": _crack_frames(), "at": Vector3(pos.x, pos.y, back)})
+		_cracks.append(_wall_crack(s, 1.0))
 
 	# one across the ground behind it
 	var g := sz * 1.5
@@ -82,6 +95,41 @@ func show_now() -> void:
 		var d: Decal = c.decal
 		d.texture_albedo = c.frames[-1]
 		d.visible = true
+
+
+## The quake tears the cracks open: over `time` seconds every crack grows
+## `factor` times wider and longer (its lines get thicker with it) while grit
+## pours out of it, and `extra` new cracks split open on the back wall.
+## Returns at once.
+func widen(factor := 1.7, time := 3.0, extra := 2) -> void:
+	for c in _cracks:
+		var d: Decal = c.decal
+		d.texture_albedo = c.frames[-1]
+		d.visible = true
+		var to := Vector3(d.size.x * factor, d.size.y, d.size.z * factor)
+		var t := create_tween()
+		t.tween_property(d, "size", to, time).set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_OUT)
+		_puff(c.at, 34)
+		_puff_later(c.at, time * 0.4)
+	for i in mini(extra, EXTRA_SPOTS.size()):
+		var c := _wall_crack(EXTRA_SPOTS[i], factor * 0.8)
+		_cracks.append(c)
+		_grow_one(c, time * 0.2 * (i + 1))
+
+
+func _puff_later(at: Vector3, delay: float) -> void:
+	await get_tree().create_timer(delay, false).timeout
+	if is_inside_tree():
+		_puff(at, 28)
+
+
+## A (still invisible) crack on the back wall at `spot` (across 0..1, up 0..1).
+func _wall_crack(spot: Vector2, size_k: float) -> Dictionary:
+	var k := _sz * _rng.randf_range(0.85, 1.15) * size_k
+	var pos := Vector3(_fp.position.x + _fp.size.x * spot.x, clampf(_h * spot.y + k * 0.5, k * 0.5, maxf(k * 0.5, _h - k * 0.3)),
+		_back + _depth * 0.5 - 0.08)
+	var d := _decal(Vector3(k, _depth, k), pos, Basis(Vector3.RIGHT, -PI * 0.5))
+	return {"decal": d, "frames": _crack_frames(), "at": Vector3(pos.x, pos.y, _back)}
 
 
 func _grow_one(c: Dictionary, delay: float) -> void:
@@ -183,12 +231,12 @@ func _dot(img: Image, c: Vector2, r: float) -> void:
 # ---------------------------------------------------------------- grit
 
 ## A little puff of grit and dust where a crack opens.
-func _puff(at: Vector3) -> void:
+func _puff(at: Vector3, amount := 16) -> void:
 	var p := CPUParticles3D.new()
 	p.position = at
 	p.one_shot = true
 	p.explosiveness = 0.85
-	p.amount = 16
+	p.amount = amount
 	p.lifetime = 1.3
 	p.direction = Vector3(0, 0.3, -1)
 	p.spread = 55.0

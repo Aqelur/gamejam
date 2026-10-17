@@ -50,6 +50,7 @@ class Townie extends Node3D:
 	const CHAT := 4
 	const SIT := 5       # dozing on a bench
 	const PHONE := 6     # strolling, eyes on the phone
+	const CROUCH := 7    # down on the grass, hands over the head (earthquake)
 
 	var mode := STAND
 	## What it does once the walk is over.
@@ -137,6 +138,14 @@ class Townie extends Node3D:
 				ar = Vector3(0.65, 0, 0.08)
 				tilt.x = 0.12
 				nod = 0.3 + 0.06 * sin(k * 0.8)   # dozing
+			CROUCH:
+				ll = 1.45
+				lr = 1.45
+				y = -0.045
+				tilt.x = 0.4
+				nod = 0.45
+				al = Vector3(2.5, 0, -0.35)
+				ar = Vector3(2.5, 0, 0.35)
 		rotation.y = lerp_angle(rotation.y, yaw, 1.0 - exp(-7.0 * dt))
 		body.position.y = y
 		body.rotation = tilt

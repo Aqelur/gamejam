@@ -54,7 +54,22 @@ extends Node
 ## (_play_ending, earthquake_ending.gd). The ending cuts between places in the
 ## city at the same moment, clock ticking, each one showing what the player's
 ## choices did there and adding up the dead and the damage; then a summary
-## card on black. Places so far: the Old Quarter (old_quarter_quake.gd).
+## card on black. Places so far: the Old Quarter (old_quarter_quake.gd), then
+## the same streets twenty minutes later (police_rescue.gd): people are still
+## alive under the rubble, and with the police station built its patrol cars
+## go street to street dropping off officers who dig them out (and keep the
+## looters away); without one only a few neighbours dig by hand. Then
+## Main Street, where a gas main bursts and a row of buildings catches fire
+## (quake_fire.gd): with the fire station built its trucks come and put it out,
+## without one the fire spreads down the row. Last, Central Park, the
+## evacuation point (central_park_quake.gd): with the drill the town gathers
+## there safely, without it the park stays nearly empty; with the shelter
+## tents they have somewhere to sleep, without them, where will they stay?
+## After everything, the hospital (hospital_quake.gd), where everyone hurt in
+## the other places is brought: without one, the injured lie on its empty
+## lot; with a sound one, ambulances pull into the emergency bay; with the
+## Contractor's cracked one, the cracks tear wider and it holds if
+## Infrastructure is 50 or more, and below that it comes down into rubble.
 ## room.test_ending skips the desk and plays it straight away.
 
 signal day_started(day: int)
@@ -69,6 +84,10 @@ const HospitalCracks := preload("res://PresidentRoom/hospital_cracks.gd")
 const FireTraining := preload("res://PresidentRoom/fire_training.gd")
 const ParkTents := preload("res://PresidentRoom/park_tents.gd")
 const OldQuarterQuake := preload("res://PresidentRoom/old_quarter_quake.gd")
+const QuakeFire := preload("res://PresidentRoom/quake_fire.gd")
+const CentralParkQuake := preload("res://PresidentRoom/central_park_quake.gd")
+const PoliceRescue := preload("res://PresidentRoom/police_rescue.gd")
+const HospitalQuake := preload("res://PresidentRoom/hospital_quake.gd")
 const EarthquakeEnding := preload("res://PresidentRoom/earthquake_ending.gd")
 const PROPOSALS_DIR := "res://PresidentRoom/proposals"
 const CITY_SCENE := "res://City/city.tscn"
@@ -122,6 +141,7 @@ var _old_quarter = null   # old_quarter_works.gd, made the first time it's neede
 var _drill = null   # central_park_drill.gd while it is up
 var _training = null   # fire_training.gd while it is up
 var _ending: EarthquakeEnding = null   # while the ending plays
+var _oq_quake = null   # old_quarter_quake.gd once it has played (the rescue needs its rubble)
 ## Left-click while an evening event is on screen skips to the next one.
 ## _watching: an event (or the opening bird's-eye shot) is playing and can be
 ## skipped. _skip: the player clicked; every wait in the event returns at once
@@ -479,6 +499,45 @@ func start_ending_now(approved_ids: Array) -> void:
 		if q and not q.repaired:
 			q.repair_now()
 			await get_tree().create_timer(OldQuarterWorks.POP_TIME + 0.3).timeout
+	if _approved.has(QuakeFire.STATION_ID):
+		var station := _city.get_node_or_null(QuakeFire.STATION)
+		if station and station.has_method("build") and not station.is_built():
+			station.set("build_time", 2.0)
+			station.build()
+			var waited := 0.0
+			while not station.is_built() and waited < 6.0:
+				await get_tree().process_frame
+				waited += get_process_delta_time()
+	if _approved.has(PoliceRescue.POLICE_ID):
+		var police := _city.get_node_or_null(PoliceRescue.STATION)
+		if police and police.has_method("build") and not police.is_built():
+			police.set("build_time", 2.0)
+			police.build()
+			var waited := 0.0
+			while not police.is_built() and waited < 6.0:
+				await get_tree().process_frame
+				waited += get_process_delta_time()
+	if _approved.has(HospitalQuake.HOSPITAL_ID):
+		var hosp := _city.get_node_or_null(HospitalQuake.HOSPITAL) as Node3D
+		if hosp and hosp.has_method("build") and not hosp.is_built():
+			hosp.set("build_time", 2.0)
+			hosp.build()
+			var waited := 0.0
+			while not hosp.is_built() and waited < 6.0:
+				await get_tree().process_frame
+				waited += get_process_delta_time()
+		if hosp and _approved.has(HospitalQuake.CRACKS_ID) and hosp.get_node_or_null("Cracks") == null:
+			var cracks = HospitalCracks.new()
+			hosp.add_child(cracks)
+			cracks.setup(hosp)
+			cracks.show_now()   # as if they had spread on an earlier evening
+	if _approved.has(CentralParkQuake.TENTS_ID):
+		var park := _city.get_node_or_null(ParkTents.PARK) as Node3D
+		if park and park.get_node_or_null("ShelterCamp") == null:
+			var camp = ParkTents.new()
+			park.add_child(camp)
+			camp.setup(park)
+			camp.finish()   # already standing, as if put up on an earlier evening
 	await _play_ending()
 
 
@@ -535,8 +594,10 @@ func _play_ending() -> void:
 	_ending.setup(_ending_choices(), _ui, _kicker, _city_cam, tile, _font_bold, _font_black)
 
 	# 3. one place after another, all at the same moment. Each takes the
-	# ending, shows its place and adds its toll. Add the next places here.
-	var places: Array[Callable] = [_play_quake_old_quarter]
+	# ending, shows its place and adds its toll. Add the next places here
+	# (before the hospital: it counts the injured from the places before it).
+	var places: Array[Callable] = [_play_quake_old_quarter, _play_quake_rescue, _play_quake_fire, _play_quake_park,
+		_play_quake_hospital]
 	for play in places:
 		await play.call(_ending)
 
@@ -573,6 +634,7 @@ func _play_quake_old_quarter(ending: EarthquakeEnding) -> void:
 		push_warning("DayCycle: no Old Quarter in %s, skipping it in the ending" % CITY_SCENE)
 		oq.queue_free()
 		return
+	_oq_quake = oq
 
 	# 1. a calm street
 	var low: Array = works.street_shot()
@@ -617,6 +679,309 @@ func _play_quake_old_quarter(ending: EarthquakeEnding) -> void:
 	await _narrate(line.replace("*", ""), null)
 	await get_tree().create_timer(1.5).timeout
 	ending.hide_tally()
+	await _cut_to_black(0.6)
+	ending.end_place()
+
+
+## Back in the Old Quarter twenty minutes later (police_rescue.gd), among the
+## rubble the quake just left. People are still alive under it. With the
+## police station built, patrol cars come down the streets with sirens and
+## lights, stop at pile after pile and drop off officers who dig people out;
+## without one only a few neighbours dig by hand, people wave from the rubble
+## and looters run off with boxes. Then the toll of those who were trapped.
+func _play_quake_rescue(ending: EarthquakeEnding) -> void:
+	var pr = PoliceRescue.new()
+	pr.name = "PoliceRescue"
+	_city.add_child(pr)
+	if _oq_quake == null or not pr.setup(_city, _oq_quake, ending):
+		pr.queue_free()   # nobody trapped (or no Old Quarter): nothing to show
+		return
+
+	# 1. high over the ruins, the clock twenty minutes on
+	var wide: Array = pr.wide_shot()
+	_kill(_orbit)
+	_city_cam.look_at_from_position(wide[0], wide[1], Vector3.UP)
+	_glide(wide[0], wide[1], 0.05, wide[2])
+	ending.begin_place("Old Quarter", PoliceRescue.LATER)
+	_caption_box.modulate.a = 1.0
+	_show_kicker()
+	_fade_in(0.8)
+	pr.start()
+	await get_tree().create_timer(0.5).timeout
+	var line: String = pr.later_line()
+	_type_caption(line)
+	await _narrate(line.replace("*", ""), null)
+
+	# 2. down by the nearest pile while the digging goes on
+	await _hide_caption()
+	var close: Array = pr.site_shot()
+	_glide(close[0], close[1], 2.4, close[2])
+	await get_tree().create_timer(1.2).timeout
+	line = pr.work_line()
+	_type_caption(line)
+	await _narrate(line.replace("*", ""), null)
+	while not pr.is_done():
+		await get_tree().process_frame
+	await get_tree().create_timer(0.8).timeout
+
+	# 3. how many came out alive
+	await _hide_caption()
+	line = pr.headline()
+	_type_caption(line)
+	var r: Dictionary = pr.result()
+	ending.add_result(r)
+	ending.show_tally(r)
+	await _narrate(line.replace("*", ""), null)
+	await get_tree().create_timer(1.5).timeout
+	ending.hide_tally()
+	pr.quiet(0.6)
+	await _cut_to_black(0.6)
+	ending.end_place()
+
+
+## Main Street: the same moment across town (quake_fire.gd). Down on the road
+## by an old row of buildings, the ground goes, a gas main bursts and the
+## corner building catches, then the one next door. Cut to minutes later: with
+## the fire station built, its two trucks come down the road with sirens and
+## lights and put it out (the narration counts what they saved); without one
+## nobody comes and the fire takes the whole row. Then the toll.
+func _play_quake_fire(ending: EarthquakeEnding) -> void:
+	var mf = QuakeFire.new()
+	mf.name = "QuakeFire"
+	_city.add_child(mf)
+	if not mf.setup(_city, ending):
+		push_warning("DayCycle: no Main Street in %s, skipping the fire in the ending" % CITY_SCENE)
+		mf.queue_free()
+		return
+	mf.burst.connect(func() -> void: ending.kick(0.7))
+
+	# 1. a busy street at lunchtime
+	var low: Array = mf.street_shot()
+	_kill(_orbit)
+	_city_cam.look_at_from_position(low[0], low[1], Vector3.UP)
+	_glide(low[0], low[1], 0.05, low[2])
+	ending.begin_place("Main Street", 0.0)
+	_caption_box.modulate.a = 1.0
+	_show_kicker()
+	_fade_in(0.8)
+	await get_tree().create_timer(0.6).timeout
+	var intro: String = mf.intro_line()
+	_type_caption(intro)
+	ending.rumble(0.08, 3.0)
+	await _narrate(intro.replace("*", ""), null)
+
+	# 2. the ground goes; the gas main bursts and the fire takes hold
+	await _hide_caption()
+	ending.kick(0.8)
+	ending.rumble(1.0, QuakeFire.SHAKE_TIME)
+	mf.start()
+	await get_tree().create_timer(QuakeFire.SHAKE_TIME + 0.4).timeout
+	var line: String = mf.fire_line()
+	_type_caption(line)
+	await _narrate(line.replace("*", ""), null)
+	await get_tree().create_timer(0.8).timeout
+
+	# 3. minutes later: the trucks come, or nobody does
+	await _cut_to_black(0.5)
+	mf.skip_ahead()
+	var wide: Array = mf.wide_shot()
+	_kill(_orbit)
+	_city_cam.look_at_from_position(wide[0], wide[1], Vector3.UP)
+	_glide(wide[0], wide[1], 0.05, wide[2])
+	ending.begin_place("Main Street", QuakeFire.LATER)
+	_caption_box.modulate.a = 1.0
+	_fade_in(0.6)
+	await get_tree().create_timer(0.4).timeout
+	if mf.fire_force:
+		mf.call_crews()
+	else:
+		mf.let_it_burn()
+	line = mf.later_line()
+	_type_caption(line)
+	await _narrate(line.replace("*", ""), null)
+	var left := 25.0
+	while left > 0.0 and not mf.is_done():
+		await get_tree().process_frame
+		left -= get_process_delta_time()
+	await get_tree().create_timer(1.0).timeout
+
+	# 4. what it cost (and what the crews saved)
+	await _hide_caption()
+	line = mf.headline()
+	_type_caption(line)
+	var r: Dictionary = mf.result()
+	ending.add_result(r)
+	ending.show_tally(r)
+	await _narrate(line.replace("*", ""), null)
+	await get_tree().create_timer(1.5).timeout
+	ending.hide_tally()
+	mf.quiet(0.6)
+	await _cut_to_black(0.6)
+	ending.end_place()
+
+
+## Central Park, the evacuation point (central_park_quake.gd). Lunchtime, a
+## few people by the fountain; the ground goes and they drop and cover, safe
+## out in the open. Cut to minutes later: with the drill the whole town has
+## walked here and the plaza is packed; without it hardly anyone came. Then
+## the night ahead: the camera goes on to the shelter tents if they were put
+## up (filling up, or standing empty), and the toll's footnote says whether
+## there is enough to last, or where everyone will stay.
+func _play_quake_park(ending: EarthquakeEnding) -> void:
+	var pq = CentralParkQuake.new()
+	pq.name = "CentralParkQuake"
+	_city.add_child(pq)
+	if not pq.prepare(_city, ending):
+		push_warning("DayCycle: no %s in %s, skipping it in the ending" % [CentralParkQuake.PARK, CITY_SCENE])
+		pq.queue_free()
+		return
+
+	# 1. a quiet lunchtime by the fountain
+	pq.start_calm()
+	var low: Array = pq.empty_shot()
+	_kill(_orbit)
+	_city_cam.look_at_from_position(low[0], low[1], Vector3.UP)
+	_glide(low[0], low[1], 0.05, low[2])
+	ending.begin_place("Central Park", 0.0)
+	_caption_box.modulate.a = 1.0
+	_show_kicker()
+	_fade_in(0.8)
+	await get_tree().create_timer(0.6).timeout
+	var line: String = pq.intro_line()
+	_type_caption(line)
+	ending.rumble(0.08, 3.0)
+	await _narrate(line.replace("*", ""), null)
+
+	# 2. the ground goes: everyone drops and covers, nothing falls on them
+	await _hide_caption()
+	ending.kick(0.8)
+	ending.rumble(1.0, CentralParkQuake.SHAKE_TIME)
+	pq.quake()
+	await get_tree().create_timer(CentralParkQuake.SHAKE_TIME + 0.4).timeout
+	line = pq.shake_line()
+	_type_caption(line)
+	await _narrate(line.replace("*", ""), null)
+	await get_tree().create_timer(0.6).timeout
+
+	# 3. minutes later: the town is here, or it isn't
+	await _cut_to_black(0.5)
+	pq.skip_ahead()
+	var wide: Array = pq.drill_shot()
+	_kill(_orbit)
+	_city_cam.look_at_from_position(wide[0], wide[1], Vector3.UP)
+	_glide(wide[0], wide[1], 0.05, wide[2])
+	ending.begin_place("Central Park", CentralParkQuake.LATER)
+	_caption_box.modulate.a = 1.0
+	_fade_in(0.6)
+	await get_tree().create_timer(0.4).timeout
+	pq.duck(true)
+	line = pq.later_line()
+	_type_caption(line)
+	await _narrate(line.replace("*", ""), null)
+	pq.duck(false)
+	await get_tree().create_timer(0.8).timeout
+
+	# 4. the night ahead: over to the tents if there are any, then the toll
+	await _hide_caption()
+	if pq.tents:
+		var shot: Array = pq.camp_shot()
+		await _glide(shot[0], shot[1], 2.2, shot[2])
+	line = pq.headline()
+	_type_caption(line)
+	var r: Dictionary = pq.result()
+	ending.add_result(r)
+	ending.show_tally(r)
+	pq.duck(true)
+	await _narrate(line.replace("*", ""), null)
+	await get_tree().create_timer(1.8).timeout
+	ending.hide_tally()
+	pq.fade_out(0.6)
+	await _cut_to_black(0.6)
+	pq.close()
+	ending.end_place()
+
+
+## The hospital, last (hospital_quake.gd), where the injured from everywhere
+## else are brought. Lunchtime: the empty lot, or the hospital (from behind,
+## on the cracks, if the Contractor skimped). The ground goes: nothing to fall,
+## or it sways and holds, or the cracks tear wider and it holds (Infrastructure
+## 50+), or they split open and it comes down. Cut to half an hour later: the
+## injured laid out on the lot or by the rubble with nowhere to go, or the
+## ambulances pulling into the emergency bay. Then the toll.
+func _play_quake_hospital(ending: EarthquakeEnding) -> void:
+	var hq = HospitalQuake.new()
+	hq.name = "HospitalQuake"
+	_city.add_child(hq)
+	if not hq.prepare(_city, ending):
+		push_warning("DayCycle: no %s in %s, skipping the hospital in the ending" % [HospitalQuake.HOSPITAL, CITY_SCENE])
+		hq.queue_free()
+		return
+	hq.fell.connect(func() -> void: ending.kick(0.9))
+
+	# 1. lunchtime at the Civic Center
+	var calm: Array = hq.calm_shot()
+	_kill(_orbit)
+	_city_cam.look_at_from_position(calm[0], calm[1], Vector3.UP)
+	_glide(calm[0], calm[1], 0.05, calm[2])
+	ending.begin_place("Civic Center", 0.0)
+	_caption_box.modulate.a = 1.0
+	_show_kicker()
+	_fade_in(0.8)
+	await get_tree().create_timer(0.6).timeout
+	var line: String = hq.intro_line()
+	_type_caption(line)
+	ending.rumble(0.08, 3.0)
+	await _narrate(line.replace("*", ""), null)
+
+	# 2. the ground goes; the camera pulls back to watch it hold, or fall
+	await _hide_caption()
+	ending.kick(0.8)
+	ending.rumble(1.0, OldQuarterQuake.SHAKE_TIME)
+	hq.quake()
+	await get_tree().create_timer(0.8).timeout
+	var wide: Array = hq.quake_shot()
+	_glide(wide[0], wide[1], 3.2, wide[2])
+	var left: float = hq.settle_time()
+	while left > 0.0 and not hq.is_done():
+		await get_tree().process_frame
+		left -= get_process_delta_time()
+	line = hq.shake_line()
+	_type_caption(line)
+	await _narrate(line.replace("*", ""), null)
+	await get_tree().create_timer(0.6).timeout
+
+	# 3. half an hour later: the injured, and somewhere to take them or not
+	await _cut_to_black(0.5)
+	hq.skip_ahead()
+	var later: Array = hq.later_shot()
+	_kill(_orbit)
+	_city_cam.look_at_from_position(later[0], later[1], Vector3.UP)
+	_glide(later[0], later[1], 0.05, later[2])
+	ending.begin_place("Civic Center", HospitalQuake.LATER)
+	_caption_box.modulate.a = 1.0
+	_fade_in(0.6)
+	await get_tree().create_timer(0.4).timeout
+	hq.arrive()
+	line = hq.later_line()
+	_type_caption(line)
+	await _narrate(line.replace("*", ""), null)
+	var wait := 10.0
+	while wait > 0.0 and not hq.arrived():
+		await get_tree().process_frame
+		wait -= get_process_delta_time()
+	await get_tree().create_timer(0.8).timeout
+
+	# 4. what it cost
+	await _hide_caption()
+	line = hq.headline()
+	_type_caption(line)
+	var r: Dictionary = hq.result()
+	ending.add_result(r)
+	ending.show_tally(r)
+	await _narrate(line.replace("*", ""), null)
+	await get_tree().create_timer(1.8).timeout
+	ending.hide_tally()
+	hq.quiet(0.6)
 	await _cut_to_black(0.6)
 	ending.end_place()
 
