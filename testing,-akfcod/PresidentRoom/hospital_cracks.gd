@@ -117,6 +117,37 @@ func widen(factor := 1.7, time := 3.0, extra := 2) -> void:
 		_grow_one(c, time * 0.2 * (i + 1))
 
 
+## The hospital is coming down: the ground under it splits open. One wide
+## crack across the middle and two smaller ones beside it, all kept inside the
+## building's own footprint so they never run out past the hospital. The wall
+## cracks stay until fallen() (the walls are still up for a moment).
+## Returns at once.
+func split_ground(time := 1.2) -> void:
+	var c := _fp.get_center()
+	var w := _fp.size.x
+	var d := _fp.size.z
+	# small enough that, turned any way, they stay inside the footprint
+	var small := minf(w, d) * 0.38
+	var splits := [
+		[Vector3(c.x, 0.0, c.z), Vector3(w * 0.9, 0.5, d * 0.9), 2.6],
+		[Vector3(c.x - w * 0.22, 0.0, c.z + d * 0.2), Vector3(small, 0.5, small), 1.8],
+		[Vector3(c.x + w * 0.22, 0.0, c.z - d * 0.2), Vector3(small, 0.5, small), 1.8],
+	]
+	for i in splits.size():
+		var s: Array = splits[i]
+		var dec := _decal(s[1], s[0], Basis(Vector3.UP, _rng.randf() * TAU) if i > 0 else Basis.IDENTITY)
+		var crack := {"decal": dec, "frames": _crack_frames(s[2]), "at": s[0], "split": true}
+		_cracks.append(crack)
+		_grow_one(crack, time * 0.25 * i, time)
+
+
+## The building is gone: hide the cracks that were on it, keep the ground split.
+func fallen() -> void:
+	for c in _cracks:
+		if not c.get("split", false):
+			(c.decal as Decal).visible = false
+
+
 func _puff_later(at: Vector3, delay: float) -> void:
 	await get_tree().create_timer(delay, false).timeout
 	if is_inside_tree():
@@ -132,7 +163,7 @@ func _wall_crack(spot: Vector2, size_k: float) -> Dictionary:
 	return {"decal": d, "frames": _crack_frames(), "at": Vector3(pos.x, pos.y, _back)}
 
 
-func _grow_one(c: Dictionary, delay: float) -> void:
+func _grow_one(c: Dictionary, delay: float, time := GROW_TIME) -> void:
 	if delay > 0.0:
 		await get_tree().create_timer(delay).timeout
 	var d: Decal = c.decal
@@ -143,7 +174,7 @@ func _grow_one(c: Dictionary, delay: float) -> void:
 	var t := create_tween()
 	t.tween_method(func(k: float) -> void:
 		d.texture_albedo = frames[clampi(int(k * frames.size()), 0, frames.size() - 1)],
-		0.0, 1.0, GROW_TIME).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+		0.0, 1.0, time).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 
 
 func _decal(size: Vector3, pos: Vector3, basis: Basis) -> Decal:
@@ -162,7 +193,8 @@ func _decal(size: Vector3, pos: Vector3, basis: Basis) -> Decal:
 # ---------------------------------------------------------------- textures
 
 ## A crack drawn in FRAMES steps: each frame is the crack a little longer.
-func _crack_frames() -> Array:
+## `thick` scales the line width (big ground splits are drawn wider).
+func _crack_frames(thick := 1.0) -> Array:
 	# segments: [from, to, t_from, t_to, width], t = order along the crack
 	var segs: Array = []
 	var start := Vector2(0.5, 0.5) + Vector2(_rng.randf_range(-0.06, 0.06), _rng.randf_range(-0.06, 0.06))
@@ -189,7 +221,7 @@ func _crack_frames() -> Array:
 				continue
 			var p0: Vector2 = (s[0] as Vector2).lerp(s[1], k0) * TEX
 			var p1: Vector2 = (s[0] as Vector2).lerp(s[1], k) * TEX
-			_line(img, p0, p1, 1.9 * s[4])
+			_line(img, p0, p1, 1.9 * s[4] * thick)
 			done[i] = k
 		frames.append(ImageTexture.create_from_image(img))
 	return frames

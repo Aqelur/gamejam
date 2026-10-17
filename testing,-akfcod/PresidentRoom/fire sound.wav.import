@@ -1,0 +1,24 @@
+[remap]
+
+importer="wav"
+type="AudioStreamWAV"
+uid="uid://y0a27tg7g7jw"
+path="res://.godot/imported/fire sound.wav-25f501d7ab6ecb76e5efb606c4abc1a7.sample"
+
+[deps]
+
+source_file="res://PresidentRoom/fire sound.wav"
+dest_files=["res://.godot/imported/fire sound.wav-25f501d7ab6ecb76e5efb606c4abc1a7.sample"]
+
+[params]
+
+force/8_bit=false
+force/mono=false
+force/max_rate=false
+force/max_rate_hz=44100
+edit/trim=false
+edit/normalize=false
+edit/loop_mode=0
+edit/loop_begin=0
+edit/loop_end=-1
+compress/mode=2

@@ -29,6 +29,10 @@ const CROWD := 170           # already gathered when the camera gets there
 const ARRIVALS := 34         # still walking in
 const SPACING := 0.068       # closest two people stand
 const MIX_RATE := 22050
+## The crowd on the plaza: a real recording (Kyster, freesound #124027).
+## It replaced the generated noise "murmur", which sounded like a grating hiss.
+const CROWD_SFX := "res://PresidentRoom/124027__kyster__big-crowd-chatter.wav"
+const CROWD_DB := -8.0
 const SAND := Color(0.82, 0.72, 0.55, 0.55)
 const VEST := Color(1.0, 0.82, 0.05)
 const SHIRTS := [Color(0.95, 0.2, 0.35), Color(0.2, 0.45, 0.9), Color(0.98, 0.85, 0.2),
@@ -303,9 +307,11 @@ func start_drill() -> void:
 	_walk_in(south, 1.0)
 
 	_siren = _player(_siren_stream(), -6.0)
-	_murmur = _player(_noise_stream(true), -60.0)
-	var t := create_tween()
-	t.tween_property(_murmur, "volume_db", -10.0, 2.5)
+	var crowd := _crowd_stream()
+	if crowd:
+		_murmur = _player(crowd, -60.0, randf() * crowd.get_length() * 0.6)
+		var t := create_tween()
+		t.tween_property(_murmur, "volume_db", CROWD_DB - (14.0 if _ducked else 0.0), 2.5)
 	set_process(true)
 
 
@@ -339,7 +345,7 @@ func duck(on: bool) -> void:
 	_ducked = on
 	for p in [_siren, _murmur, _wind]:
 		if p and is_instance_valid(p):
-			var base := -6.0 if p == _siren else (-10.0 if p == _murmur else -8.0)
+			var base := -6.0 if p == _siren else (CROWD_DB if p == _murmur else -8.0)
 			var t := create_tween()
 			t.tween_property(p, "volume_db", base - (14.0 if on else 0.0), 0.6)
 
@@ -618,14 +624,35 @@ func _megaphone(p: Townie) -> void:
 
 # ================================================================ sound
 
-func _player(stream: AudioStream, db: float) -> AudioStreamPlayer:
+func _player(stream: AudioStream, db: float, from := 0.0) -> AudioStreamPlayer:
 	var p := AudioStreamPlayer.new()
 	p.stream = stream
 	p.volume_db = db
 	add_child(p)
-	p.play()
+	p.play(from)
 	_players.append(p)
 	return p
+
+
+## CROWD_SFX set to loop, or null if it's missing (then the plaza is just
+## quiet under the sirens; the old generated murmur is not used any more).
+func _crowd_stream() -> AudioStream:
+	if not ResourceLoader.exists(CROWD_SFX):
+		push_warning("CentralParkDrill: %s not found, no crowd sound" % CROWD_SFX)
+		return null
+	var s := load(CROWD_SFX) as AudioStream
+	if s == null:
+		return null
+	if s is AudioStreamWAV:
+		var w := (s as AudioStreamWAV).duplicate() as AudioStreamWAV
+		w.loop_mode = AudioStreamWAV.LOOP_FORWARD
+		w.loop_begin = 0
+		w.loop_end = maxi(1, int(w.get_length() * w.mix_rate) - 1)
+		return w
+	if "loop" in s:
+		s = s.duplicate() as AudioStream
+		s.set("loop", true)
+	return s
 
 
 ## Town sirens: two of them wailing up and down, one a little lower and

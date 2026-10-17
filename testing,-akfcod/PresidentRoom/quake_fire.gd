@@ -28,10 +28,13 @@ extends Node3D
 ## no-fire-station numbers are always worked out too, so the narration can say
 ## what the crews saved. All fixed by setup() (seeded), before anything burns.
 ##
-## Everything is in city units (one tile = 26.9): the fire, smoke, embers,
+## Everything is in city units (one tile = 26.9): the fire, smoke, sparks,
 ## water and the trucks (copies of the fire station's parked Engine3) are all
-## made here at that scale. Sound (fire roar, sirens, water) is generated on
-## the fly; no sound files.
+## made here at that scale. The fire itself is textured flame tongues (a
+## flipbook drawn in code), streaking sparks that swirl up on the heat and
+## crackling bursts of sparks that pop out and fall. The fire is heard through
+## FIRE_SFX (looped, louder the harder it burns); sirens and water are
+## generated on the fly.
 ##
 ## day_cycle.gd drives it:
 ##   setup(city, ending)   -> false if there's no Main Street
@@ -62,19 +65,23 @@ const CLUSTER_REACH := 2.8
 ## Buildings already burning when the trucks get there.
 const CAUGHT := 2
 
-## People living in a building one tile wide, deep and tall (as the Old Quarter).
-const RESIDENTS_PER_TILE := 18.0
+## People in a building one tile wide, deep and tall (lunchtime: flats over
+## busy shops and cafes, so a little fuller than the Old Quarter).
+const RESIDENTS_PER_TILE := 24.0
+const MIN_RESIDENTS := 6
+const MAX_RESIDENTS := 160
 const VALUE_PER_RESIDENT := 50000.0
-## Share of the people inside who die: where the gas went up, and where the
-## fire spread to (people there had a little warning).
-const DEATH_RATE_FIRST := 0.18
-const DEATH_RATE_SPREAD := 0.1
+## Share of the people inside who die if nobody comes: where the gas went up
+## (stairs cut off at once), and where the fire spread to (a little warning,
+## but the smoke fills the stairwells long before the flames arrive).
+const DEATH_RATE_FIRST := 0.55
+const DEATH_RATE_SPREAD := 0.38
 ## Share of those deaths avoided by a fully aware population.
 const PREPARED_SAVES := 0.45
 const DRILL_BONUS := 0.25
 ## Share of the deaths avoided by fire crews pulling people out.
-const CREW_SAVES := 0.55
-const TRAINED_SAVES := 0.72
+const CREW_SAVES := 0.75
+const TRAINED_SAVES := 0.86
 ## Share of a building's value lost: burned out, or put out by the crews.
 const BURN_LOSS := 0.95
 const CREW_LOSS := 0.4
@@ -109,6 +116,13 @@ const SMOKE := Color(0.13, 0.12, 0.12, 0.8)
 const STEAM := Color(0.92, 0.93, 0.95, 0.65)
 const WATER := Color(0.78, 0.9, 1.0)
 const MIX_RATE := 22050.0
+## The fire's sound, looped. Its volume follows how hard the fire is burning.
+const FIRE_SFX := "res://PresidentRoom/fire sound.wav"
+const FIRE_SFX_DB := 0.0
+## Flame flipbook: frames across and down, size of one frame in pixels.
+const FLAME_FRAMES := 4
+const FLAME_FRAME_W := 48
+const FLAME_FRAME_H := 96
 
 var tile := 26.926893
 var ground_y := -0.7273283
@@ -141,11 +155,14 @@ var _next_spread := 0.0
 var _crews_out := false
 var _crews_done := false
 var _flame_mesh: QuadMesh
-var _ember_mesh: QuadMesh
+var _spark_mesh: QuadMesh
 var _water_mesh: QuadMesh
+static var _flame_tex_cache: ImageTexture
+static var _spark_tex_cache: ImageTexture
 
 # sound
 var _player: AudioStreamPlayer
+var _fire_player: AudioStreamPlayer
 var _pb: AudioStreamGeneratorPlayback
 var _volume := 1.0
 var _siren := 0.0          # 0..1
@@ -212,7 +229,7 @@ func setup(city: Node3D, ending) -> bool:
 		var e: Dictionary = _row[i]
 		var dims := _local_size(e.b)
 		var volume := dims.x * dims.y * dims.z / pow(tile, 3.0)
-		var people := clampi(roundi(volume * RESIDENTS_PER_TILE * _rng.randf_range(0.8, 1.2)), 4, 90)
+		var people := clampi(roundi(volume * RESIDENTS_PER_TILE * _rng.randf_range(0.8, 1.2)), MIN_RESIDENTS, MAX_RESIDENTS)
 		var value := people * VALUE_PER_RESIDENT
 		var rate := (DEATH_RATE_FIRST if i == 0 else DEATH_RATE_SPREAD) * (1.0 - PREPARED_SAVES * aware)
 		var luck := _rng.randf_range(0.9, 1.1)
@@ -255,6 +272,9 @@ func setup(city: Node3D, ending) -> bool:
 	_centre /= float(n)
 	_centre.y = ground_y
 	_plan_road(city)
+	# draw the flame and spark textures now, not as the gas goes up
+	_flame_quad()
+	_spark_quad()
 	return true
 
 
@@ -477,7 +497,10 @@ func _ignite(i: int, heat: float) -> void:
 	# flames from the windows on every side and over the roof
 	e.flames = _flames(box)
 	e.roof = _roof_flames(box)
-	e.embers = _embers(box)
+	e.core = _core_flames(box)
+	e.sparks = _sparks(box)
+	e.crackle = _crackle(box)
+	e.pop = 0.0         # 0..1, a burst of sparks right now
 	e.smoke = _smoke(Vector3(c.x, box.end.y + 0.1 * tile, c.z), Vector3(box.size.x * 0.35, 0.05 * tile, box.size.z * 0.35),
 		SMOKE, 90, 9.0, 1.1, 1.0)
 	e.steam = _smoke(Vector3(c.x, box.end.y - box.size.y * 0.2, c.z), Vector3(box.size.x * 0.5, box.size.y * 0.25, box.size.z * 0.5),
@@ -519,7 +542,13 @@ func _process(delta: float) -> void:
 		var flick := 0.75 + 0.25 * _noise.get_noise_2d(_t * 9.0, i * 31.0) + 0.15 * _noise.get_noise_2d(_t * 23.0, i * 7.0)
 		(e.flames as GPUParticles3D).amount_ratio = clampf(e.heat, 0.0, 1.0)
 		(e.roof as GPUParticles3D).amount_ratio = clampf(e.heat * 1.2 - 0.2, 0.0, 1.0)
-		(e.embers as GPUParticles3D).amount_ratio = clampf(e.heat, 0.0, 1.0)
+		(e.core as GPUParticles3D).amount_ratio = clampf(e.heat * 1.3 - 0.3, 0.0, 1.0) * clampf(flick, 0.6, 1.0)
+		(e.sparks as GPUParticles3D).amount_ratio = clampf(e.heat * (0.55 + 0.45 * flick), 0.0, 1.0)
+		# every so often something gives way inside and a burst of sparks pops out
+		if e.heat > 0.3 and _rng.randf() < delta * 1.6 * e.heat:
+			e.pop = 1.0
+		e.pop = maxf(0.0, e.pop - delta * 2.5)
+		(e.crackle as GPUParticles3D).amount_ratio = clampf(e.heat * (0.08 + 0.92 * e.pop), 0.0, 1.0)
 		# smoke keeps going thinly after the flames die; steam while water hits
 		(e.smoke as GPUParticles3D).amount_ratio = clampf(maxf(e.heat, e.char * 0.45), 0.0, 1.0)
 		(e.steam as GPUParticles3D).amount_ratio = clampf(e.douse * (0.3 + e.heat), 0.0, 1.0)
@@ -782,30 +811,37 @@ func _shut_off() -> void:
 
 # ================================================================ particles
 
-## Flames licking out of the windows on every side of the building.
-func _flames(box: AABB) -> GPUParticles3D:
+## Points scattered over the windows on every side of `box` (relative to its centre).
+func _window_points(box: AABB, per_face: int, low := 0.18, high := 0.95) -> PackedVector3Array:
 	var c := box.get_center()
 	var pts := PackedVector3Array()
 	for f in _faces(box):
 		var n: Vector3 = f[1]
 		var side := Vector3(n.z, 0, -n.x)
-		for k in 22:
+		for k in per_face:
 			var p: Vector3 = f[0] + side * _rng.randf_range(-0.85, 0.85) * f[2]
-			p.y = box.position.y + box.size.y * _rng.randf_range(0.18, 0.95)
+			p.y = box.position.y + box.size.y * _rng.randf_range(low, high)
 			pts.append(p + n * 0.05 * tile - c)
+	return pts
+
+
+## Flames licking out of the windows on every side of the building.
+func _flames(box: AABB) -> GPUParticles3D:
+	var c := box.get_center()
+	var pts := _window_points(box, 26)
 	var pm := ParticleProcessMaterial.new()
 	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_POINTS
 	pm.emission_point_texture = _points_texture(pts)
 	pm.emission_point_count = pts.size()
 	pm.direction = Vector3.UP
-	pm.spread = 18.0
-	pm.initial_velocity_min = 0.25 * tile
-	pm.initial_velocity_max = 0.6 * tile
-	pm.gravity = Vector3(0, 0.55 * tile, 0)
+	pm.spread = 14.0
+	pm.initial_velocity_min = 0.3 * tile
+	pm.initial_velocity_max = 0.7 * tile
+	pm.gravity = Vector3(0.03, 0.65, 0.01) * tile
 	pm.damping_min = 0.2 * tile
 	pm.damping_max = 0.4 * tile
-	_flame_look(pm, 0.22, 0.45)
-	var p := QuakeFX.emitter(_fx, Transform3D(Basis(), c), _flame_quad(), _q(260), 0.95, pm, false, 0.0)
+	_flame_look(pm, 0.24, 0.5)
+	var p := QuakeFX.emitter(_fx, Transform3D(Basis(), c), _flame_quad(), _q(320), 0.95, pm, false, 0.0)
 	p.amount_ratio = 0.0
 	p.visibility_aabb = AABB(Vector3(-5, -3, -5) * tile, Vector3(10, 10, 10) * tile)
 	return p
@@ -817,50 +853,136 @@ func _roof_flames(box: AABB) -> GPUParticles3D:
 	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
 	pm.emission_box_extents = Vector3(box.size.x * 0.42, 0.05 * tile, box.size.z * 0.42)
 	pm.direction = Vector3.UP
-	pm.spread = 12.0
-	pm.initial_velocity_min = 0.5 * tile
-	pm.initial_velocity_max = 1.1 * tile
-	pm.gravity = Vector3(0.05, 0.6, 0.02) * tile
+	pm.spread = 10.0
+	pm.initial_velocity_min = 0.55 * tile
+	pm.initial_velocity_max = 1.2 * tile
+	pm.gravity = Vector3(0.06, 0.7, 0.02) * tile
 	pm.damping_min = 0.2 * tile
 	pm.damping_max = 0.5 * tile
-	_flame_look(pm, 0.4, 0.8)
+	_flame_look(pm, 0.45, 0.95)
 	var c := box.get_center()
 	var p := QuakeFX.emitter(_fx, Transform3D(Basis(), Vector3(c.x, box.end.y - 0.05 * tile, c.z)), _flame_quad(),
-		_q(160), 1.1, pm, false, 0.0)
+		_q(200), 1.15, pm, false, 0.0)
 	p.amount_ratio = 0.0
 	p.visibility_aabb = AABB(Vector3(-5, -3, -5) * tile, Vector3(10, 10, 10) * tile)
 	return p
 
 
-## Sparks drifting up out of the fire on the hot air.
-func _embers(box: AABB) -> GPUParticles3D:
+## The white-hot heart of the fire, low on the roof under the big flames.
+func _core_flames(box: AABB) -> GPUParticles3D:
 	var pm := ParticleProcessMaterial.new()
 	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
-	pm.emission_box_extents = Vector3(box.size.x * 0.5, box.size.y * 0.2, box.size.z * 0.5)
+	pm.emission_box_extents = Vector3(box.size.x * 0.32, 0.03 * tile, box.size.z * 0.32)
 	pm.direction = Vector3.UP
-	pm.spread = 30.0
-	pm.initial_velocity_min = 0.8 * tile
-	pm.initial_velocity_max = 1.8 * tile
-	pm.gravity = Vector3(0.15, 0.2, 0.05) * tile
-	pm.damping_min = 0.1 * tile
-	pm.damping_max = 0.3 * tile
-	pm.scale_min = 0.5
-	pm.scale_max = 1.2
-	pm.turbulence_enabled = true
-	pm.turbulence_noise_strength = 2.0
-	pm.turbulence_noise_scale = 1.5 * tile
-	pm.turbulence_influence_min = 0.1
-	pm.turbulence_influence_max = 0.25
-	pm.color = Color(1.0, 0.7, 0.3)
-	pm.color_ramp = QuakeFX.ramp([Color(1, 0.9, 0.5, 1), Color(1, 0.5, 0.15, 0.9), Color(0.8, 0.2, 0.05, 0)],
-		[0.0, 0.6, 1.0])
-	pm.lifetime_randomness = 0.5
+	pm.spread = 8.0
+	pm.initial_velocity_min = 0.35 * tile
+	pm.initial_velocity_max = 0.8 * tile
+	pm.gravity = Vector3(0, 0.5, 0) * tile
+	pm.damping_min = 0.3 * tile
+	pm.damping_max = 0.5 * tile
+	_flame_look(pm, 0.28, 0.55, true)
 	var c := box.get_center()
-	var p := QuakeFX.emitter(_fx, Transform3D(Basis(), Vector3(c.x, box.end.y - box.size.y * 0.15, c.z)),
-		_ember_quad(), _q(80), 3.0, pm, false, 0.0)
+	var p := QuakeFX.emitter(_fx, Transform3D(Basis(), Vector3(c.x, box.end.y - 0.04 * tile, c.z)), _flame_quad(),
+		_q(110), 0.6, pm, false, 0.0)
 	p.amount_ratio = 0.0
-	p.visibility_aabb = AABB(Vector3(-8, -3, -8) * tile, Vector3(16, 14, 16) * tile)
+	p.visibility_aabb = AABB(Vector3(-5, -3, -5) * tile, Vector3(10, 10, 10) * tile)
 	return p
+
+
+## Sparks streaking up out of the fire, swirling on the hot air as they climb.
+func _sparks(box: AABB) -> GPUParticles3D:
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	pm.emission_box_extents = Vector3(box.size.x * 0.5, box.size.y * 0.25, box.size.z * 0.5)
+	pm.direction = Vector3.UP
+	pm.spread = 35.0
+	pm.initial_velocity_min = 1.0 * tile
+	pm.initial_velocity_max = 2.4 * tile
+	pm.gravity = Vector3(0.2, 0.3, 0.06) * tile
+	pm.damping_min = 0.25 * tile
+	pm.damping_max = 0.6 * tile
+	pm.scale_min = 0.6
+	pm.scale_max = 1.4
+	pm.scale_curve = QuakeFX.curve([Vector2(0, 1.0), Vector2(0.7, 0.8), Vector2(1, 0.2)])
+	pm.turbulence_enabled = true
+	pm.turbulence_noise_strength = 3.0
+	pm.turbulence_noise_scale = 1.1 * tile
+	pm.turbulence_influence_min = 0.15
+	pm.turbulence_influence_max = 0.4
+	_spark_look(pm)
+	pm.lifetime_randomness = 0.6
+	var c := box.get_center()
+	var p := QuakeFX.emitter(_fx, Transform3D(Basis(), Vector3(c.x, box.end.y - box.size.y * 0.2, c.z)),
+		_spark_quad(), _q(170), 2.6, pm, false, 0.0)
+	_align_sparks(p)
+	p.amount_ratio = 0.0
+	p.visibility_aabb = AABB(Vector3(-8, -3, -8) * tile, Vector3(16, 16, 16) * tile)
+	return p
+
+
+## Crackle: sparks popping out of the windows in bursts, arcing and falling.
+## _process drives the bursts through amount_ratio.
+func _crackle(box: AABB) -> GPUParticles3D:
+	var c := box.get_center()
+	var pts := _window_points(box, 14, 0.25, 0.9)
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_POINTS
+	pm.emission_point_texture = _points_texture(pts)
+	pm.emission_point_count = pts.size()
+	pm.direction = Vector3.UP
+	pm.spread = 75.0
+	pm.initial_velocity_min = 1.4 * tile
+	pm.initial_velocity_max = 3.4 * tile
+	pm.gravity = Vector3(0, -2.4, 0) * tile
+	pm.damping_min = 0.3 * tile
+	pm.damping_max = 0.6 * tile
+	pm.scale_min = 0.5
+	pm.scale_max = 1.1
+	pm.scale_curve = QuakeFX.curve([Vector2(0, 1.0), Vector2(1, 0.25)])
+	_spark_look(pm)
+	pm.lifetime_randomness = 0.5
+	var p := QuakeFX.emitter(_fx, Transform3D(Basis(), c), _spark_quad(), _q(240), 1.1, pm, false, 0.0)
+	_align_sparks(p)
+	p.amount_ratio = 0.0
+	p.visibility_aabb = AABB(Vector3(-8, -6, -8) * tile, Vector3(16, 14, 16) * tile)
+	return p
+
+
+## A shower of sparks thrown out in every direction (the gas going up).
+func _spark_burst(pos: Vector3, power := 1.0) -> void:
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	pm.emission_sphere_radius = 0.1 * tile * power
+	pm.direction = Vector3.UP
+	pm.spread = 110.0
+	pm.initial_velocity_min = 2.0 * tile * power
+	pm.initial_velocity_max = 5.0 * tile * power
+	pm.gravity = Vector3(0, -2.6, 0) * tile
+	pm.damping_min = 0.5 * tile
+	pm.damping_max = 1.0 * tile
+	pm.scale_min = 0.7
+	pm.scale_max = 1.6
+	pm.scale_curve = QuakeFX.curve([Vector2(0, 1.0), Vector2(1, 0.2)])
+	_spark_look(pm)
+	pm.lifetime_randomness = 0.6
+	var p := QuakeFX.emitter(_fx, Transform3D(Basis(), pos), _spark_quad(), _q(int(160 * power)), 1.6, pm, true, 0.92)
+	_align_sparks(p)
+	p.visibility_aabb = AABB(Vector3(-8, -6, -8) * tile, Vector3(16, 14, 16) * tile)
+
+
+## Spark colour: white-hot as it leaves the fire, cooling through orange to red.
+func _spark_look(pm: ParticleProcessMaterial) -> void:
+	pm.color = Color.WHITE
+	pm.color_initial_ramp = QuakeFX.ramp([Color(1, 1, 1), Color(1, 0.85, 0.6), Color(1, 0.7, 0.45)], [0.0, 0.6, 1.0])
+	pm.color_ramp = QuakeFX.ramp(
+		[Color(1, 0.97, 0.85, 1), Color(1, 0.75, 0.3, 1), Color(1, 0.42, 0.08, 0.9), Color(0.7, 0.12, 0.02, 0)],
+		[0.0, 0.25, 0.65, 1.0])
+
+
+## Sparks are streaks that point the way they fly.
+func _align_sparks(p: GPUParticles3D) -> void:
+	p.transform_align = GPUParticles3D.TRANSFORM_ALIGN_Z_BILLBOARD_Y_TO_VELOCITY
+	p.fixed_fps = 0
 
 
 ## A column of smoke (or steam) billowing up and drifting off on the wind.
@@ -896,7 +1018,7 @@ func _smoke(pos: Vector3, extents: Vector3, color: Color, amount: int, life: flo
 	return p
 
 
-## The gas going up: a ball of flame, a puff of black smoke.
+## The gas going up: a ball of flame, a shower of sparks, a puff of black smoke.
 func _fireball(pos: Vector3, power := 1.0) -> void:
 	var pm := ParticleProcessMaterial.new()
 	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
@@ -909,8 +1031,9 @@ func _fireball(pos: Vector3, power := 1.0) -> void:
 	pm.damping_min = 1.0 * tile
 	pm.damping_max = 1.6 * tile
 	_flame_look(pm, 0.45 * power, 0.9 * power)
-	var ball := QuakeFX.emitter(_fx, Transform3D(Basis(), pos), _flame_quad(), _q(int(70 * power)), 1.1, pm, true, 0.95)
+	var ball := QuakeFX.emitter(_fx, Transform3D(Basis(), pos), _flame_quad(), _q(int(90 * power)), 1.1, pm, true, 0.95)
 	ball.visibility_aabb = AABB(Vector3(-5, -3, -5) * tile, Vector3(10, 10, 10) * tile)
+	_spark_burst(pos + Vector3.UP * 0.1 * tile, power)
 	var s := _smoke(pos + Vector3.UP * 0.3 * tile, Vector3.ONE * 0.2 * tile * power, Color(0.1, 0.09, 0.09, 0.85),
 		int(30 * power), 4.0, 0.9 * power, 1.4)
 	s.amount_ratio = 1.0
@@ -930,36 +1053,145 @@ func _fireball(pos: Vector3, power := 1.0) -> void:
 	tw.tween_callback(flash.queue_free)
 
 
-## Flame size (in tiles) and colour over a flame particle's life.
-func _flame_look(pm: ParticleProcessMaterial, size_min: float, size_max: float) -> void:
+## Flame size (in tiles) and colour over a flame particle's life. `hot` is the
+## white-yellow heart of the fire.
+func _flame_look(pm: ParticleProcessMaterial, size_min: float, size_max: float, hot := false) -> void:
 	pm.scale_min = size_min * tile
 	pm.scale_max = size_max * tile
-	pm.scale_curve = QuakeFX.curve([Vector2(0, 0.5), Vector2(0.25, 1.0), Vector2(1, 0.3)])
-	pm.angle_max = 360.0
-	pm.angular_velocity_min = -40.0
-	pm.angular_velocity_max = 40.0
+	pm.scale_curve = QuakeFX.curve([Vector2(0, 0.45), Vector2(0.25, 1.0), Vector2(0.7, 0.85), Vector2(1, 0.35)])
+	# tongues of flame stay upright, leaning a little
+	pm.angle_min = -14.0
+	pm.angle_max = 14.0
+	pm.angular_velocity_min = -12.0
+	pm.angular_velocity_max = 12.0
+	# each flame plays the flipbook from its own frame, so they never move in step
+	pm.anim_speed_min = 0.7
+	pm.anim_speed_max = 1.4
+	pm.anim_offset_min = 0.0
+	pm.anim_offset_max = 1.0
 	pm.color = Color.WHITE
-	pm.color_ramp = QuakeFX.ramp(
-		[Color(FLAME_HOT, 0.0), Color(FLAME_HOT, 0.95), Color(FLAME, 0.9), Color(FLAME_DEEP, 0.55), Color(0.15, 0.06, 0.03, 0.0)],
-		[0.0, 0.08, 0.35, 0.7, 1.0])
+	pm.color_initial_ramp = QuakeFX.ramp([Color(1, 1, 1), Color(1, 0.88, 0.75)], [0.0, 1.0])
+	if hot:
+		pm.color_ramp = QuakeFX.ramp(
+			[Color(1, 1, 0.9, 0.0), Color(1, 0.98, 0.85, 1.0), Color(1, 0.85, 0.45, 0.9), Color(1, 0.55, 0.15, 0.0)],
+			[0.0, 0.1, 0.5, 1.0])
+	else:
+		pm.color_ramp = QuakeFX.ramp(
+			[Color(FLAME_HOT, 0.0), Color(FLAME_HOT, 1.0), Color(FLAME, 0.95), Color(FLAME_DEEP, 0.65), Color(0.25, 0.05, 0.02, 0.0)],
+			[0.0, 0.07, 0.32, 0.68, 1.0])
 	pm.lifetime_randomness = 0.35
 	pm.turbulence_enabled = true
-	pm.turbulence_noise_strength = 1.2
-	pm.turbulence_noise_scale = 1.2 * tile
+	pm.turbulence_noise_strength = 1.4
+	pm.turbulence_noise_scale = 1.1 * tile
 	pm.turbulence_influence_min = 0.05
-	pm.turbulence_influence_max = 0.15
+	pm.turbulence_influence_max = 0.16
 
 
+## Flame tongues: an animated flipbook, drawn additively, faded where they
+## touch the walls.
 func _flame_quad() -> QuadMesh:
-	if _flame_mesh == null:
-		_flame_mesh = _glow_quad(1.0, 0.35)
+	if _flame_mesh != null:
+		return _flame_mesh
+	if _flame_tex_cache == null:
+		_flame_tex_cache = _make_flame_texture()
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	m.particles_anim_h_frames = FLAME_FRAMES
+	m.particles_anim_v_frames = FLAME_FRAMES
+	m.particles_anim_loop = true
+	m.vertex_color_use_as_albedo = true
+	m.albedo_texture = _flame_tex_cache
+	m.proximity_fade_enabled = true
+	m.proximity_fade_distance = 0.12 * tile
+	_flame_mesh = QuadMesh.new()
+	# taller than wide, and grown up from where the particle is
+	_flame_mesh.size = Vector2(0.62, 1.0)
+	_flame_mesh.center_offset = Vector3(0, 0.3, 0)
+	_flame_mesh.material = m
 	return _flame_mesh
 
 
-func _ember_quad() -> QuadMesh:
-	if _ember_mesh == null:
-		_ember_mesh = _glow_quad(0.035 * tile, 0.2)
-	return _ember_mesh
+## A thin streak, bright at the head and fading down the tail.
+func _spark_quad() -> QuadMesh:
+	if _spark_mesh != null:
+		return _spark_mesh
+	if _spark_tex_cache == null:
+		_spark_tex_cache = _make_spark_texture()
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	# the emitter turns each streak to face the camera along its flight
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_DISABLED
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	m.vertex_color_use_as_albedo = true
+	m.albedo_texture = _spark_tex_cache
+	_spark_mesh = QuadMesh.new()
+	_spark_mesh.size = Vector2(0.014, 0.1) * tile
+	_spark_mesh.center_offset = Vector3(0, -0.035 * tile, 0)   # the head leads, the tail trails
+	_spark_mesh.material = m
+	return _spark_mesh
+
+
+## The flame flipbook: FLAME_FRAMES x FLAME_FRAMES frames of a flickering
+## tongue of fire (white core, orange edges, ragged tip). The noise runs round
+## a circle, so the last frame leads back into the first.
+static func _make_flame_texture() -> ImageTexture:
+	var fw := FLAME_FRAME_W
+	var fh := FLAME_FRAME_H
+	var nf := FLAME_FRAMES
+	var count := nf * nf
+	var img := Image.create(fw * nf, fh * nf, false, Image.FORMAT_RGBA8)
+	var noise := FastNoiseLite.new()
+	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	noise.seed = 4127
+	noise.frequency = 1.0
+	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
+	noise.fractal_octaves = 2
+	var edge := Color(1.0, 0.6, 0.32)
+	for f in count:
+		var ang := TAU * float(f) / float(count)
+		var ox := cos(ang) * 0.8
+		var oz := sin(ang) * 0.8
+		var x0 := (f % nf) * fw
+		var y0 := floori(float(f) / float(nf)) * fh
+		for py in fh:
+			var y := 1.0 - (float(py) + 0.5) / float(fh)   # 0 at the base, 1 at the tip
+			# a teardrop: round at the base, tapering to a point
+			var w := 0.8 * sqrt(clampf(y / 0.22, 0.0, 1.0)) * pow(1.0 - y, 0.75)
+			for px in fw:
+				var x := (float(px) + 0.5) / float(fw) * 2.0 - 1.0
+				var n1 := noise.get_noise_3d(x * 1.2 + 11.0, y * 2.0 + ox, oz)
+				var n2 := noise.get_noise_3d(x * 3.0, y * 4.5 + ox * 1.7, oz * 1.7 + 40.0)
+				var xd := x + n1 * 0.5 * y          # wavers more toward the tip
+				var d := 1.0 - absf(xd) / maxf(w, 0.001) if w > 0.0 else -1.0
+				d += n2 * 0.4 * (0.25 + y)          # ragged edges and tip
+				var a := smoothstep(0.0, 0.5, d) * smoothstep(0.0, 0.07, y) * (1.0 - smoothstep(0.82, 1.0, y))
+				var core := smoothstep(0.3, 0.95, d) * (1.0 - y * 0.8)
+				var col := edge.lerp(Color.WHITE, core)
+				col.a = clampf(a * (0.55 + 0.45 * core), 0.0, 1.0)
+				img.set_pixel(x0 + px, y0 + py, col)
+	return ImageTexture.create_from_image(img)
+
+
+## A spark streak: a hot round head at the top, a tail fading below it.
+static func _make_spark_texture() -> ImageTexture:
+	var w := 8
+	var h := 64
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	for py in h:
+		var y := (float(py) + 0.5) / float(h)     # 0 at the head, 1 at the tail end
+		for px in w:
+			var x := (float(px) + 0.5) / float(w) * 2.0 - 1.0
+			var across := exp(-x * x * 5.0)
+			var along := pow(1.0 - y, 1.6)
+			var head := exp(-pow((y - 0.06) / 0.07, 2.0)) * exp(-x * x * 3.0)
+			var a := clampf(across * along * 0.85 + head, 0.0, 1.0)
+			img.set_pixel(px, py, Color(1, 1, 1, a))
+	return ImageTexture.create_from_image(img)
 
 
 ## A soft round additive quad (fire and sparks).
@@ -1118,7 +1350,7 @@ func _road_at(tiles: Array[Vector3], p: Vector3) -> Vector3:
 
 # ================================================================ sound
 
-## Roar and crackle of the fire, the sirens wailing, the hiss of water.
+## The fire (FIRE_SFX, looped), the sirens wailing, the hiss of water.
 func _start_sound() -> void:
 	var gen := AudioStreamGenerator.new()
 	gen.mix_rate = MIX_RATE
@@ -1130,9 +1362,42 @@ func _start_sound() -> void:
 	add_child(_player)
 	_player.play()
 	_pb = _player.get_stream_playback() as AudioStreamGeneratorPlayback
+	# the fire itself: the recording, silent until something catches
+	var sfx := _fire_stream()
+	if sfx:
+		_fire_player = AudioStreamPlayer.new()
+		_fire_player.name = "FireCrackle"
+		_fire_player.stream = sfx
+		_fire_player.volume_db = -80.0
+		add_child(_fire_player)
+		_fire_player.play(randf() * sfx.get_length() * 0.5)
+
+
+## FIRE_SFX set to loop, or null if it's missing (then the fire is generated).
+func _fire_stream() -> AudioStream:
+	if not ResourceLoader.exists(FIRE_SFX):
+		push_warning("QuakeFire: %s not found, using the generated fire sound" % FIRE_SFX)
+		return null
+	var s := load(FIRE_SFX) as AudioStream
+	if s == null:
+		return null
+	if s is AudioStreamWAV:
+		var w := (s as AudioStreamWAV).duplicate() as AudioStreamWAV
+		w.loop_mode = AudioStreamWAV.LOOP_FORWARD
+		w.loop_begin = 0
+		w.loop_end = maxi(1, int(w.get_length() * w.mix_rate) - 1)
+		return w
+	if "loop" in s:
+		s = s.duplicate() as AudioStream
+		s.set("loop", true)
+	return s
 
 
 func _feed_sound() -> void:
+	if _fire_player:
+		# loud as soon as it catches, roaring once the row is alight
+		var level := sqrt(clampf(_fire_level, 0.0, 1.0)) * _volume
+		_fire_player.volume_db = linear_to_db(maxf(level, 0.0001)) + FIRE_SFX_DB
 	if _pb == null:
 		return
 	var n := _pb.get_frames_available()
@@ -1140,13 +1405,15 @@ func _feed_sound() -> void:
 	var fire := _fire_level
 	for i in n:
 		var white := randf() * 2.0 - 1.0
-		# fire: a low roar, with pops and crackles
-		_brown = (_brown + 0.02 * white) / 1.02
-		_low = lerpf(_low, _brown, 0.08)
-		if randf() < 0.0009 * fire:
-			_pop = randf_range(0.4, 1.0)
-		_pop *= 0.996
-		var s := _low * 5.0 * fire + white * _pop * 0.5 * fire
+		var s := 0.0
+		if _fire_player == null:
+			# no recording: a low roar, with pops and crackles
+			_brown = (_brown + 0.02 * white) / 1.02
+			_low = lerpf(_low, _brown, 0.08)
+			if randf() < 0.0009 * fire:
+				_pop = randf_range(0.4, 1.0)
+			_pop *= 0.996
+			s = _low * 5.0 * fire + white * _pop * 0.5 * fire
 		# siren: a wail sweeping up and down
 		if _siren > 0.0:
 			_siren_t += dt

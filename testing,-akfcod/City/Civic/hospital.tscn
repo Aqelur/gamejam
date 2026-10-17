@@ -879,7 +879,7 @@ shape = SubResource("BoxShape3D_yol2q")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.75, 1.66, -0.35)
 
 [node name="Backing" type="MeshInstance3D" parent="MainWing/RoofCrossL" unique_id=855958582]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.01, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.005, 0)
 material_override = SubResource("StandardMaterial3D_ue566")
 mesh = SubResource("BoxMesh_ggoan")
 
@@ -889,7 +889,7 @@ material_override = SubResource("StandardMaterial3D_aimeg")
 mesh = SubResource("BoxMesh_5c36s")
 
 [node name="B" type="MeshInstance3D" parent="MainWing/RoofCrossL" unique_id=787686686]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.024999999, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.026, 0)
 material_override = SubResource("StandardMaterial3D_aimeg")
 mesh = SubResource("BoxMesh_6x7um")
 
@@ -897,7 +897,7 @@ mesh = SubResource("BoxMesh_6x7um")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.75, 1.66, -0.35)
 
 [node name="Backing" type="MeshInstance3D" parent="MainWing/RoofCrossR" unique_id=2012444870]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.01, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.005, 0)
 material_override = SubResource("StandardMaterial3D_ue566")
 mesh = SubResource("BoxMesh_jfwgn")
 
@@ -907,7 +907,7 @@ material_override = SubResource("StandardMaterial3D_aimeg")
 mesh = SubResource("BoxMesh_ys4sm")
 
 [node name="B" type="MeshInstance3D" parent="MainWing/RoofCrossR" unique_id=541751411]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.024999999, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.026, 0)
 material_override = SubResource("StandardMaterial3D_aimeg")
 mesh = SubResource("BoxMesh_ulafp")
 
@@ -1018,7 +1018,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6, -0.6)
 shape = SubResource("BoxShape3D_rpmml")
 
 [node name="FacadeCross" type="Node3D" parent="Tower" unique_id=2138055581]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.05, 0.27)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.05, 0.29)
 
 [node name="Backing" type="MeshInstance3D" parent="Tower/FacadeCross" unique_id=1957639429]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.015)
@@ -1031,12 +1031,12 @@ material_override = SubResource("StandardMaterial3D_5yg1g")
 mesh = SubResource("BoxMesh_15qci")
 
 [node name="H" type="MeshInstance3D" parent="Tower/FacadeCross" unique_id=1580393272]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.01)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.013)
 material_override = SubResource("StandardMaterial3D_5yg1g")
 mesh = SubResource("BoxMesh_r42ns")
 
 [node name="SideCrossL" type="Node3D" parent="Tower" unique_id=95341299]
-transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, -0.92, 0, -0.6)
+transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, -0.94, 0, -0.6)
 
 [node name="Cross" type="Node3D" parent="Tower/SideCrossL" unique_id=481108552]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3, 0)
@@ -1052,12 +1052,12 @@ material_override = SubResource("StandardMaterial3D_5yg1g")
 mesh = SubResource("BoxMesh_e7ofx")
 
 [node name="H" type="MeshInstance3D" parent="Tower/SideCrossL/Cross" unique_id=593675623]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.01)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.013)
 material_override = SubResource("StandardMaterial3D_5yg1g")
 mesh = SubResource("BoxMesh_kumpf")
 
 [node name="SideCrossR" type="Node3D" parent="Tower" unique_id=587630929]
-transform = Transform3D(-4.371139e-08, 0, 1, 0, 1, 0, -1, 0, -4.371139e-08, 0.92, 0, -0.6)
+transform = Transform3D(-4.371139e-08, 0, 1, 0, 1, 0, -1, 0, -4.371139e-08, 0.94, 0, -0.6)
 
 [node name="Cross" type="Node3D" parent="Tower/SideCrossR" unique_id=1527649989]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3, 0)
@@ -1073,12 +1073,12 @@ material_override = SubResource("StandardMaterial3D_5yg1g")
 mesh = SubResource("BoxMesh_qkxcs")
 
 [node name="H" type="MeshInstance3D" parent="Tower/SideCrossR/Cross" unique_id=1505957009]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.01)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.013)
 material_override = SubResource("StandardMaterial3D_5yg1g")
 mesh = SubResource("BoxMesh_5wgbp")
 
 [node name="BackCross" type="Node3D" parent="Tower" unique_id=2138627405]
-transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0, -1.47)
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0, -1.49)
 
 [node name="Cross" type="Node3D" parent="Tower/BackCross" unique_id=1365210498]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.05, 0)
@@ -1094,7 +1094,7 @@ material_override = SubResource("StandardMaterial3D_5yg1g")
 mesh = SubResource("BoxMesh_n2b8g")
 
 [node name="H" type="MeshInstance3D" parent="Tower/BackCross/Cross" unique_id=289087494]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.01)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.013)
 material_override = SubResource("StandardMaterial3D_5yg1g")
 mesh = SubResource("BoxMesh_l0lh3")
 
@@ -1274,7 +1274,7 @@ material_override = SubResource("StandardMaterial3D_1lq8o")
 mesh = SubResource("BoxMesh_ymlti")
 
 [node name="H" type="MeshInstance3D" parent="Emergency/Ambulance1/CrossL" unique_id=91774620]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.01)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.013)
 material_override = SubResource("StandardMaterial3D_1lq8o")
 mesh = SubResource("BoxMesh_3sd7a")
 
@@ -1287,7 +1287,7 @@ material_override = SubResource("StandardMaterial3D_1lq8o")
 mesh = SubResource("BoxMesh_j50xt")
 
 [node name="H" type="MeshInstance3D" parent="Emergency/Ambulance1/CrossR" unique_id=1688263044]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.01)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.013)
 material_override = SubResource("StandardMaterial3D_1lq8o")
 mesh = SubResource("BoxMesh_cmb0a")
 
@@ -1300,7 +1300,7 @@ material_override = SubResource("StandardMaterial3D_1lq8o")
 mesh = SubResource("BoxMesh_wu8vx")
 
 [node name="B" type="MeshInstance3D" parent="Emergency/Ambulance1/RoofCross" unique_id=701865190]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.024999999, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.026, 0)
 material_override = SubResource("StandardMaterial3D_1lq8o")
 mesh = SubResource("BoxMesh_hp7q5")
 
@@ -1374,7 +1374,7 @@ material_override = SubResource("StandardMaterial3D_1lq8o")
 mesh = SubResource("BoxMesh_nprey")
 
 [node name="H" type="MeshInstance3D" parent="Emergency/Ambulance2/CrossL" unique_id=82104258]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.01)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.013)
 material_override = SubResource("StandardMaterial3D_1lq8o")
 mesh = SubResource("BoxMesh_smuly")
 
@@ -1387,7 +1387,7 @@ material_override = SubResource("StandardMaterial3D_1lq8o")
 mesh = SubResource("BoxMesh_8aev5")
 
 [node name="H" type="MeshInstance3D" parent="Emergency/Ambulance2/CrossR" unique_id=1263499897]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.01)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.013)
 material_override = SubResource("StandardMaterial3D_1lq8o")
 mesh = SubResource("BoxMesh_w7fwy")
 
@@ -1400,7 +1400,7 @@ material_override = SubResource("StandardMaterial3D_1lq8o")
 mesh = SubResource("BoxMesh_ul51j")
 
 [node name="B" type="MeshInstance3D" parent="Emergency/Ambulance2/RoofCross" unique_id=730135311]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.024999999, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.026, 0)
 material_override = SubResource("StandardMaterial3D_1lq8o")
 mesh = SubResource("BoxMesh_ytpc7")
 

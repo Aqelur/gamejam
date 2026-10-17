@@ -188,7 +188,11 @@ func prepare(city: Node3D, ending) -> bool:
 			standing = 1
 		_plan.append({
 			"b": _rise, "box": _tall_box(_rise), "outcome": o, "residents": inside, "dead": inside_dead,
-			"trapped": 0, "loss": damage, "delay": 0.3, "full": true, "crack": mode == Mode.COLLAPSES,
+			"trapped": 0, "loss": damage, "delay": 0.3, "full": true,
+			# no BuildingQuake fissure: its model is scaled past the building
+			# and reads as a long black road. The ground split is drawn by
+			# hospital_cracks.gd instead, inside the hospital's footprint.
+			"crack": false,
 		})
 	return true
 
@@ -330,6 +334,7 @@ func quake() -> void:
 		bq.main_shock.connect(_on_hold_shock.bind(bq))
 	elif mode == Mode.COLLAPSES:
 		bq.started.connect(_on_fall_start)
+		bq.main_shock.connect(_on_fall_shock)
 		bq.collapsed.connect(_on_fell)
 
 
@@ -356,9 +361,15 @@ func _on_fall_start(_outcome: int) -> void:
 	_wall_dust(1.0)
 
 
+## The jolt that brings it down: the ground under it splits (within its footprint).
+func _on_fall_shock() -> void:
+	if _cracks:
+		_cracks.split_ground()
+
+
 func _on_fell() -> void:
 	if _cracks:
-		_cracks.visible = false   # nothing left for them to be on
+		_cracks.fallen()   # the wall cracks go with the walls; the ground split stays
 	fell.emit()
 
 

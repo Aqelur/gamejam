@@ -430,10 +430,18 @@ func _build_window(room: Node3D) -> void:
 	var mid := (WIN_Z0 + WIN_Z1) * 0.5
 	var frame := _mat(TRIM)
 	var x := -HALF_X - 0.1
-	_box(room, Vector3(0.24, 0.05, w + 0.12), Vector3(x + 0.04, SILL - 0.05, mid), frame)   # sill
-	_box(room, Vector3(0.2, 0.06, w + 0.12), Vector3(x, WIN_TOP, mid), frame)
-	_box(room, Vector3(0.2, h, 0.06), Vector3(x, SILL, WIN_Z0 - 0.03), frame)
-	_box(room, Vector3(0.2, h, 0.06), Vector3(x, SILL, WIN_Z1 + 0.03), frame)
+	# The frame must never share a face with the facade (outer face at
+	# -HALF_X - 0.2, opening edges at WIN_Z0/WIN_Z1, SILL, WIN_TOP) or the
+	# inside wall (-HALF_X + 0.01): coplanar faces z-fight and the frame
+	# flickers in and out of the wall. So it pokes out a little on both sides
+	# (0.25 deep instead of the 0.2 wall) and laps 0.02 into the opening.
+	var fd := 0.25          # frame depth, x from -HALF_X - 0.225 to -HALF_X + 0.025
+	var fx := -HALF_X - 0.1
+	var lap := 0.02
+	_box(room, Vector3(0.32, 0.06, w + 0.12), Vector3(x + 0.01, SILL - 0.04, mid), frame)   # sill
+	_box(room, Vector3(fd, 0.06, w + 0.12), Vector3(fx, WIN_TOP - lap, mid), frame)
+	_box(room, Vector3(fd, h + 0.04, 0.06), Vector3(fx, SILL - 0.02, WIN_Z0 - 0.03 + lap), frame)
+	_box(room, Vector3(fd, h + 0.04, 0.06), Vector3(fx, SILL - 0.02, WIN_Z1 + 0.03 - lap), frame)
 	_glass = _box(room, Vector3(0.02, h, w), Vector3(x, SILL, mid), _glass_mat(), false)
 	# a curtain each side
 	for z in [WIN_Z0 - 0.14, WIN_Z1 + 0.14]:
