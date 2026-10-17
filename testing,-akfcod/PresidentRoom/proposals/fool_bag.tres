@@ -1,0 +1,15 @@
+[gd_resource type="Resource" format=3]
+
+[ext_resource type="Script" path="res://PresidentRoom/proposal_data.gd" id="1_data"]
+
+[resource]
+script = ExtResource("1_data")
+id = "fool_bag"
+character = "The Town Fool"
+start = true
+says = "I keep a bag by my door: water, a flashlight, a whistle and my rubber chicken. Everyone laughs at me. Want one, Mayor?"
+deny_label = "No, thanks"
+approve_label = "Bags for everyone"
+approve_people = 5
+approve_money = -5
+note = "Tür: deli, doğru. Zincir: tek. Deli ama haklı: deprem çantası gerçekten işe yarar. Reddedilince etkisi yok. Onaylamak bilinci artırır, biraz para götürür. Şehirde hiçbir şey gösterilmez."

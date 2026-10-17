@@ -1,0 +1,15 @@
+[gd_resource type="Resource" format=3]
+
+[ext_resource type="Script" path="res://PresidentRoom/proposal_data.gd" id="1_data"]
+
+[resource]
+script = ExtResource("1_data")
+id = "finance_fund"
+character = "Minister of Finance"
+start = true
+says = "The capital sent us an earthquake fund. Sign here and it's in our account by Monday. Try not to spend it all on concrete."
+deny_label = "Leave it in the capital"
+deny_bureaucracy = -5
+approve_label = "Sign for the fund"
+approve_money = 15
+note = "Tür: yardım. Zincir: tek. Başkentten deprem fonu. Reddetmek bürokrasiyi azaltır, onaylamak kasaya para koyar. Şehirde hiçbir şey gösterilmez (caption, action, cutscene, city_target boş)."

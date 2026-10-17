@@ -1,0 +1,13 @@
+[gd_resource type="Resource" format=3]
+
+[ext_resource type="Script" path="res://PresidentRoom/proposal_data.gd" id="1_data"]
+
+[resource]
+script = ExtResource("1_data")
+id = "fool_umbrella"
+character = "The Town Fool"
+start = true
+says = "Mayor, I'd like a permit to sell earthquake-proof umbrellas. They're regular umbrellas. But I say it with confidence."
+deny_label = "Permit denied"
+approve_label = "Permit granted"
+note = "Tür: deli, troll. Zincir: tek. İki seçeneğin de etkisi yok. Şehirde hiçbir şey gösterilmez."

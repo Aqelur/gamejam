@@ -1,0 +1,15 @@
+[gd_resource type="Resource" format=3]
+
+[ext_resource type="Script" path="res://PresidentRoom/proposal_data.gd" id="1_data"]
+
+[resource]
+script = ExtResource("1_data")
+id = "finance_leftover"
+character = "Minister of Finance"
+start = true
+says = "There's some money left in this year's disaster budget. I'd rather keep it in the treasury, but the seismologist wants it for an awareness campaign. Shall I hand it over?"
+deny_label = "Keep it in the treasury"
+deny_money = 10
+approve_label = "Hand it over"
+approve_people = 10
+note = "Tür: kazanç. Zincir: tek. Afet bütçesinden artan para. Reddetmek kasaya para koyar, onaylamak farkındalık kampanyasına gider ve bilinci artırır. Şehirde hiçbir şey gösterilmez."

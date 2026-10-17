@@ -1,0 +1,15 @@
+[gd_resource type="Resource" format=3]
+
+[ext_resource type="Script" path="res://PresidentRoom/proposal_data.gd" id="1_data"]
+
+[resource]
+script = ExtResource("1_data")
+id = "fool_doorway"
+character = "The Town Fool"
+start = true
+says = "Mayor! I've found the safest spot in any quake: the doorway! Let me paint every doorframe in town gold, so people know where to run."
+deny_label = "Put the paint away"
+approve_label = "Paint them gold"
+approve_people = -10
+approve_money = -5
+note = "Tür: deli, mit. Zincir: tek. Kapı eşiği efsanesi (modern binalarda kapı eşiği en güvenli yer değildir; çök-kapan-tutun önerilir). Reddedilince etkisi yok. Onaylamak bilinci ve parayı düşürür. Şehirde hiçbir şey gösterilmez."

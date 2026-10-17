@@ -1,0 +1,16 @@
+[gd_resource type="Resource" format=3]
+
+[ext_resource type="Script" path="res://PresidentRoom/proposal_data.gd" id="1_data"]
+
+[resource]
+script = ExtResource("1_data")
+id = "agency_grant"
+character = "Head of Disaster Agency"
+start = true
+says = "The capital is offering a disaster grant. It comes with a pile of reporting forms. If you don't want the paperwork, I can send you a free volunteer training team instead."
+deny_label = "Send the volunteers"
+deny_people = 5
+approve_label = "Take the grant"
+approve_money = 10
+approve_bureaucracy = 5
+note = "Tür: kazanç. Zincir: tek. Başkentten afet hibesi, yanında bir yığın rapor formu. Reddetmek gönüllü eğitim ekibi getirir (bilinç +5), onaylamak kasaya para koyar ama bürokrasiyi artırır. Şehirde hiçbir şey gösterilmez."

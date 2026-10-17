@@ -1,0 +1,15 @@
+[gd_resource type="Resource" format=3]
+
+[ext_resource type="Script" path="res://PresidentRoom/proposal_data.gd" id="1_data"]
+
+[resource]
+script = ExtResource("1_data")
+id = "influencer_bracelet"
+character = "The Influencer"
+start = true
+says = "A brand wants to sponsor the town! They make Quake-Proof Bracelets. Totally scientific, probably. They'll pay us just to say we like them!"
+deny_label = "No thanks"
+approve_label = "Take the money"
+approve_people = -10
+approve_money = 15
+note = "Tür: takas. Zincir: tek. Sahte 'depreme dayanıklı bileklik' sponsorluğu. Reddedilince etkisi yok. Onaylamak kasaya para koyar ama halkın bilinci düşer. Şehirde hiçbir şey gösterilmez."

@@ -1,0 +1,14 @@
+[gd_resource type="Resource" format=3]
+
+[ext_resource type="Script" path="res://PresidentRoom/proposal_data.gd" id="1_data"]
+
+[resource]
+script = ExtResource("1_data")
+id = "fool_goat"
+character = "The Town Fool"
+start = true
+says = "My goat stared at the wall all night. That means a quake is coming! Ring the sirens!"
+deny_label = "Let the goat sleep"
+approve_label = "Ring the sirens"
+approve_people = -5
+note = "Tür: deli, mit. Zincir: tek. Hayvanların depremi önceden bildiği kanıtlanmamıştır. Reddedilince etkisi yok. Onaylamak boş alarmla bilinci düşürür. Şehirde hiçbir şey gösterilmez."

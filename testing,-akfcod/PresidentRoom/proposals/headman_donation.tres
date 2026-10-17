@@ -1,0 +1,15 @@
+[gd_resource type="Resource" format=3]
+
+[ext_resource type="Script" path="res://PresidentRoom/proposal_data.gd" id="1_data"]
+
+[resource]
+script = ExtResource("1_data")
+id = "headman_donation"
+character = "The Headman"
+start = true
+says = "The neighbors passed a hat around and raised some money for the quake. They want to run a first-aid course with it. Or you can take it for the treasury. Will you let them run the course?"
+deny_label = "Take it for the treasury"
+deny_money = 15
+approve_label = "Run the course"
+approve_people = 10
+note = "Tür: kazanç. Zincir: tek. Mahallenin topladığı bağış. Reddetmek parayı kasaya alır, onaylamak ilk yardım kursuna gider ve bilinci artırır. Şehirde hiçbir şey gösterilmez."
