@@ -1,0 +1,20 @@
+[gd_resource type="Resource" format=3]
+
+[ext_resource type="Script" path="res://PresidentRoom/proposal_data.gd" id="1_data"]
+
+[resource]
+script = ExtResource("1_data")
+id = "agency_park_tents"
+character = "Head of Disaster Agency"
+start = true
+says = "If the big one hits at night, people will need somewhere to sleep. Let me set up tents and evacuation signs in Central Park, ready to go."
+deny_label = "Not now"
+deny_money = 5
+deny_readiness = -5
+approve_label = "Set them up"
+approve_money = -10
+approve_readiness = 10
+approve_bureaucracy = 5
+approve_caption = "You approved the *shelter tents*. Rows of tents and evacuation signs now stand ready in *Central Park*, so if the big one hits at night, everyone has somewhere to sleep."
+approve_action = 9
+note = "Tür: takas. Zincir: park, 1. halka. Onaylanınca gün sonunda kamera Central Park'ın doğu çimine iner: park girişlerinde tahliye tabelaları yükselir, ana patikanın üstüne yeşil EMERGENCY SHELTER kapısı kurulur, yanına erzak kasaları konur ve çadırlar sıra sıra açılır (park_tents.gd). Kamp oyun boyunca kalır. Reddedilince şehirde görsel bir şey olmaz (deny_caption boş, aksiyon NONE)."

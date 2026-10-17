@@ -15,7 +15,7 @@ extends Node3D
 ## The music is made on the fly (AudioStreamGenerator): a 124 BPM house loop
 ## in A minor. Everything on stage and in the crowd moves to its beat.
 ##
-##   start()          music starts (INTRO), crowd sways
+##   start(first)     music starts (INTRO, or BUILD for a quick show)
 ##   nightfall(t)     sky, sun and ambient light go to night, glow goes up
 ##   queue_part(p)    BUILD / DROP / OUTRO, switched on the next bar
 ##   duck(on)         music quieter while the narrator speaks
@@ -585,7 +585,8 @@ func _build_crowd() -> void:
 
 # ================================================================ show
 
-func start() -> void:
+## Music on, starting with `first` (INTRO, or BUILD to go straight for the drop).
+func start(first := Part.INTRO) -> void:
 	_player = AudioStreamPlayer.new()
 	var gen := AudioStreamGenerator.new()
 	gen.mix_rate = MIX_RATE
@@ -595,7 +596,7 @@ func start() -> void:
 	add_child(_player)
 	_player.play()
 	_playback = _player.get_stream_playback() as AudioStreamGeneratorPlayback
-	_queued = Part.INTRO
+	_queued = first
 	set_process(true)
 	_fill()
 
@@ -607,7 +608,7 @@ func queue_part(p: int) -> void:
 
 ## Quieter music while the narrator talks.
 func duck(on: bool) -> void:
-	_duck_to = 0.32 if on else 1.0
+	_duck_to = 0.55 if on else 1.0
 
 
 ## Night falls over `time` seconds: sky, sun and ambient go dark, glow goes up.
@@ -676,7 +677,7 @@ func _process(delta: float) -> void:
 		var p: int = _changes.pop_front()[1]
 		_enter(p)
 	var want: float = [0.0, 0.35, 0.72, 1.0, 0.25][part]
-	energy = move_toward(energy, want, delta * 0.45)
+	energy = move_toward(energy, want, delta * 1.6)
 	var drop := part == Part.DROP
 	var bar := int(beat / 4.0)
 	if bar != _last_bar:
@@ -908,7 +909,7 @@ func _voice() -> float:
 		s += (1.0 if _arp_ph < 0.5 else -1.0) * _arp_env * 0.06 * side
 		_arp_env *= _k_arp
 	if _gen_part == Part.BUILD:
-		var k := clampf(float(_n - _build_n) / (MIX_RATE * 14.0), 0.0, 1.0)
+		var k := clampf(float(_n - _build_n) / (MIX_RATE * 2.0), 0.0, 1.0)
 		_riser_lp += (noise - _riser_lp) * (0.03 + 0.5 * k)
 		s += (noise - _riser_lp) * k * k * 0.14
 	if _crash_env > 0.0005:

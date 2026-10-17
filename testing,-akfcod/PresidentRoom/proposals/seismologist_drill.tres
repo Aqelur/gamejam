@@ -1,0 +1,21 @@
+[gd_resource type="Resource" format=3]
+
+[ext_resource type="Script" path="res://PresidentRoom/proposal_data.gd" id="1_data"]
+
+[resource]
+script = ExtResource("1_data")
+id = "seismologist_drill"
+character = "Chief Seismologist"
+start = true
+says = "Let's run a town-wide drill on Sunday. Sirens at noon, everyone walks to Central Park. Shops close for an hour, and yes, people will grumble."
+deny_label = "Not this Sunday"
+deny_people = -10
+deny_money = 10
+deny_caption = "No drill this Sunday. The shops stayed open and the tills kept ringing. But *Central Park*, the town's evacuation point, sits empty. If the big one hits, nobody knows where to go."
+deny_action = 6
+approve_label = "Sound the sirens"
+approve_people = 10
+approve_money = -10
+approve_caption = "Sunday, noon. The *sirens* wailed and the whole town walked to *Central Park*. The shops grumbled about the lost hour, but now everyone knows the way."
+approve_action = 5
+note = "Tür: takas. Zincir: tek. Onaylanınca pazar öğlen sirenler çalar, bütün kasaba Central Park'taki fıskiye meydanında (tahliye toplanma noktası) toplanır; promenattan gelenler, yelekli görevliler, kalabalık uğultusu (central_park_drill.gd). Reddedilince meydan boş: bankta uyuklayan bir yaşlı adam, bir de telefonuna bakarak geçen biri; rüzgar ve yuvarlanan birkaç çalı topu (tumbleweed). İki durumda da gün sonu metni sesli okunur."

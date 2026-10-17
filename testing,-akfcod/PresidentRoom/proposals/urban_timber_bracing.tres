@@ -1,0 +1,21 @@
+[gd_resource type="Resource" format=3]
+
+[ext_resource type="Script" path="res://PresidentRoom/proposal_data.gd" id="1_data"]
+
+[resource]
+script = ExtResource("1_data")
+id = "urban_timber_bracing"
+character = "Minister of Urban Planning"
+start = true
+says = "Some buildings are held together by old bricks and good luck. Let me brace every building with timber before it's too late."
+deny_label = "Leave them be"
+deny_money = 5
+deny_readiness = -10
+deny_caption = "You turned down the *timber bracing*. The Old Quarter is left to its old bricks and good luck, and nobody is coming to fix it."
+deny_action = 4
+approve_label = "Brace them all"
+approve_money = -10
+approve_readiness = 10
+approve_caption = "You approved the *timber bracing*. Every crumbling building in the Old Quarter is braced and repaired, as solid as the rest of the city."
+approve_action = 3
+note = "Tür: takas. Zincir: tek. Old Quarter'daki yıkık, eğik binalar. Onaylanınca işçiler gelir, binalar düzelir, temizlenir ve diğerleri gibi boyanır; moloz, iskele ve dikmeler kalkar, kırık lambalar ve kuru ağaçlar yenilenir (old_quarter_works.gd). Reddedilince kamera yine boş sokağa iner ve birkaç çalı topu (tumbleweed) yuvarlanıp geçer."

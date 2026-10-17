@@ -24,7 +24,30 @@ extends Node
 ## (beach_concert.gd): night falls, the camera goes down into the dancing
 ## crowd, the drop hits with fireworks, and the caption is read out line by
 ## line over the music. It is always the last thing shown that evening, and
-## the stage is gone again by the next morning.
+## the stage is gone again by the next morning. REPAIR / NEGLECT choices (the
+## Minister of Urban Planning's) go to the Old Quarter (old_quarter_works.gd):
+## approved, builders fix every crumbling building up like the rest of the
+## city and it stays that way; denied, the camera stands in its empty street
+## while tumbleweeds roll past. DRILL / NO_DRILL choices (the Chief
+## Seismologist's town-wide drill) go to Central Park (central_park_drill.gd):
+## approved, the noon sirens wail and the whole town gathers at the fountain
+## plaza, more still streaming in down the promenade; denied, the plaza is
+## empty but for one or two people while tumbleweeds roll across. Either way
+## the caption is read aloud, and the park is back to normal the next day.
+## A choice that unlocks another proposal puts it on the desk straight after,
+## the same day (the day grows by one paper if it has to). A CRACKS choice
+## (the Contractor's cheap concrete) swings the camera round behind the
+## hospital once it has gone up and cracks spread over its back wall
+## (hospital_cracks.gd); they stay there for the rest of the game.
+## A TRAINING choice (the foreign rescue team's offer) goes to the fire station
+## (fire_training.gd): two hose teams spray arcs of water across the apron
+## while the visiting instructor looks on; gone again the next day. A
+## proposal with `requires` set only turns up once that other proposal has
+## been approved on an earlier day (the training needs the fire station).
+## A TENTS choice (the Head of Disaster Agency's shelter camp) goes to
+## Central Park's east lawn (park_tents.gd): evacuation signs spring up at
+## every park gate and rows of tents pop up around an EMERGENCY SHELTER gate
+## while the caption is read aloud; they stay for the rest of the game.
 
 signal day_started(day: int)
 signal day_ended(day: int)
@@ -32,12 +55,21 @@ signal day_ended(day: int)
 const ProposalData := preload("res://PresidentRoom/proposal_data.gd")
 const EndCutscene := preload("res://PresidentRoom/end_cutscene.gd")
 const BeachConcert := preload("res://PresidentRoom/beach_concert.gd")
+const OldQuarterWorks := preload("res://PresidentRoom/old_quarter_works.gd")
+const CentralParkDrill := preload("res://PresidentRoom/central_park_drill.gd")
+const HospitalCracks := preload("res://PresidentRoom/hospital_cracks.gd")
+const FireTraining := preload("res://PresidentRoom/fire_training.gd")
+const ParkTents := preload("res://PresidentRoom/park_tents.gd")
 const PROPOSALS_DIR := "res://PresidentRoom/proposals"
 const CITY_SCENE := "res://City/city.tscn"
 const FONT_BOLD := "res://PresidentRoom/fonts/Montserrat-Bold.ttf"
 const FONT_BLACK := "res://PresidentRoom/fonts/Montserrat-ExtraBold.ttf"
 const SKY_FLASH := Color(0.93, 0.96, 1.0)
 const GOLD := Color(1.0, 0.82, 0.36)
+## Text-to-speech speed for the evening narration (1.0 = normal).
+const TTS_RATE := 1.3
+## Longest a building takes to rise during the evening showcase (seconds).
+const EVENING_BUILD_TIME := 4.0
 const QUIET_DAY := "A quiet day. Nothing you signed today changed the city."
 
 var room                     # president_room.gd (untyped: it is a @tool script)
@@ -50,8 +82,10 @@ var busy := false
 var _catalog: Array[Resource] = []
 var _used := {}         # id -> true once it has been on the desk
 var _unlocked := {}     # id -> true
+var _approved := {}     # id -> true once it has been approved
 var _deck: Array = []   # ProposalData or null (placeholder), in order
 var _decided := 0
+var _day_length := 1    # papers today: proposals_per_day, plus any follow-ups
 var _today: Array[Dictionary] = []   # {"data": ProposalData, "approved": bool}
 
 var _ui: CanvasLayer
@@ -74,6 +108,67 @@ var _orbit: Tween
 var _tts_voice := ""
 var _tts_checked := false
 var _concert = null   # beach_concert.gd while it is up
+var _old_quarter = null   # old_quarter_works.gd, made the first time it's needed
+var _drill = null   # central_park_drill.gd while it is up
+var _training = null   # fire_training.gd while it is up
+## Left-click while an evening event is on screen skips to the next one.
+## _watching: an event (or the opening bird's-eye shot) is playing and can be
+## skipped. _skip: the player clicked; every wait in the event returns at once
+## until the next event starts.
+var _watching := false
+var _skip := false
+var _voice: AudioStreamPlayer   # the narration recording playing right now
+
+
+func _input(event: InputEvent) -> void:
+	if not _watching or _skip:
+		return
+	if event is InputEventMouseButton and event.pressed \
+			and event.button_index == MOUSE_BUTTON_LEFT:
+		_skip = true
+		get_viewport().set_input_as_handled()
+
+
+## Start (true) or finish (false) a skippable stretch of the evening.
+func _watch(on: bool) -> void:
+	if on:
+		_skip = false
+		_watching = true
+		return
+	_watching = false
+	if _skip:
+		# cut the narration short; _skip stays set so anything still waiting
+		# from the skipped event lets go too, until the next event starts
+		if is_instance_valid(_voice):
+			_voice.stop()
+		if _tts_checked and _tts_voice != "":
+			DisplayServer.tts_stop()
+
+
+## Wait `time` seconds, or stop early when the player skips.
+func _wait(time: float) -> void:
+	var left := time
+	while left > 0.0 and not _skip:
+		await get_tree().process_frame
+		left -= get_process_delta_time()
+
+
+## Wait for a tween to finish, or stop early when the player skips.
+func _until_tween(t: Tween) -> void:
+	while not _skip and t and t.is_valid() and t.is_running():
+		await get_tree().process_frame
+
+
+## Run a coroutine and wait for it, or stop waiting early when the player
+## skips (it carries on by itself in the background).
+func _until_done(job: Callable) -> void:
+	var st := {"done": false}
+	var runner := func() -> void:
+		await job.call()
+		st.done = true
+	runner.call()
+	while not st.done and not _skip:
+		await get_tree().process_frame
 
 
 func setup(p_room) -> void:
@@ -110,11 +205,14 @@ func _deal() -> void:
 	_today.clear()
 	_decided = 0
 	var n: int = maxi(1, room.proposals_per_day)
+	_day_length = n
 	for p in _catalog:
 		if _deck.size() >= n:
 			break
 		if _used.has(p.id):
 			continue
+		if p.requires != "" and not _approved.has(p.requires):
+			continue   # e.g. no fire station yet, no fire crew training
 		if p.start or _unlocked.has(p.id):
 			_deck.append(p)
 	while _deck.size() < n:
@@ -143,13 +241,37 @@ func on_stamped(approved: bool) -> bool:
 		for i in fx.size():
 			if fx[i] != 0:
 				room.set_stat(i, room.get_stat(i) + fx[i])
+		if approved:
+			_approved[current.id] = true
 		var u: String = current.unlocks(approved)
 		if u != "":
 			_unlocked[u] = true
+			_follow_up(u)
 		_today.append({"data": current, "approved": approved})
 		current = null
 	_decided += 1
-	return _decided >= room.proposals_per_day
+	return _decided >= _day_length
+
+
+## Put the proposal `id` that was just unlocked on the desk next. It takes the
+## place of a placeholder paper if there is one, else the day gets one longer.
+func _follow_up(id: String) -> void:
+	if _used.has(id):
+		return
+	for p in _catalog:
+		if p.id != id:
+			continue
+		var i := _deck.find(p)
+		if i >= 0:
+			_deck.remove_at(i)   # was coming later today anyway: bring it forward
+		else:
+			var spare := _deck.rfind(null)
+			if spare >= 0:
+				_deck.remove_at(spare)
+			else:
+				_day_length += 1
+		_deck.push_front(p)
+		return
 
 
 # ================================================================ end of the day
@@ -158,6 +280,7 @@ func end_day() -> void:
 	if busy:
 		return
 	busy = true
+	_skip = false
 	day_ended.emit(day)
 	room.lock_camera(true)
 	var cam: Camera3D = room.camera
@@ -166,17 +289,17 @@ func end_day() -> void:
 	var win: Vector3 = room.left_window_centre()
 	var normal: Vector3 = room.left_window_normal()
 	var eye := cam.global_position
-	await _move_cam(cam, Transform3D(Basis.looking_at(win - eye, Vector3.UP), eye), 1.5,
+	await _move_cam(cam, Transform3D(Basis.looking_at(win - eye, Vector3.UP), eye), 0.9,
 		Tween.TRANS_SINE, Tween.EASE_IN_OUT)
-	await get_tree().create_timer(0.35).timeout
+	await get_tree().create_timer(0.1).timeout
 
 	# 2. push into the glass, and flash white as the view goes through it
 	var into := Transform3D(Basis.looking_at(-normal, Vector3.UP), win + normal * 0.22)
-	var push := _move_cam(cam, into, 1.7, Tween.TRANS_CUBIC, Tween.EASE_IN, 38.0)
+	var push := _move_cam(cam, into, 1.1, Tween.TRANS_CUBIC, Tween.EASE_IN, 38.0)
 	_fade.color = Color(SKY_FLASH, 0.0)
 	var f := create_tween()
-	f.tween_interval(1.15)
-	f.tween_property(_fade, "color:a", 1.0, 0.55).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	f.tween_interval(0.7)
+	f.tween_property(_fade, "color:a", 1.0, 0.4).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	await push
 	if f.is_running():
 		await f.finished
@@ -188,73 +311,106 @@ func end_day() -> void:
 	_show_city(true)
 	_city_cam.global_transform = _bird
 	var bird_target := _ground_point(_bird)
-	_drift(_bird, bird_target, 7.0)
+	_drift(_bird, bird_target, 4.0)
 	_kicker.text = "END OF DAY %d" % day
 	_set_caption("")
 	_caption_box.modulate.a = 1.0
 	_show_kicker()
 	var out := create_tween()
-	out.tween_property(_fade, "color:a", 0.0, 1.1).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	await get_tree().create_timer(2.2).timeout
+	out.tween_property(_fade, "color:a", 0.0, 0.6).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	_watch(true)   # a click here jumps straight to the first change
+	await _wait(1.0)
+	_watch(false)
 
-	# 4. each change made today, one after another
+	# 4. each change made today, one after another (click to skip to the next)
 	var shown := 0
 	for entry in _evening_order():
 		var data: Resource = entry.data
 		var approved: bool = entry.approved
-		if data.action(approved) == ProposalData.CityAction.CONCERT:
-			if shown > 0:
-				await _hide_caption()
-			shown += 1
-			await _play_concert(data, approved)
-			continue
-		if data.cutscene(approved) != ProposalData.Cutscene.NONE:
-			if shown > 0:
-				await _hide_caption()
-			shown += 1
-			await _play_cutscene(data, approved)
-			continue
-		if data.city_target == "":
-			continue
-		var node := _city.get_node_or_null(NodePath(data.city_target)) as Node3D
-		if node == null:
-			push_warning("DayCycle: city target '%s' of %s not found in %s" % [data.city_target, data.id, CITY_SCENE])
-			continue
+		var act: int = data.action(approved)
+		var play: Callable
+		if act == ProposalData.CityAction.CONCERT:
+			play = _play_concert.bind(data, approved)
+		elif act == ProposalData.CityAction.REPAIR or act == ProposalData.CityAction.NEGLECT:
+			play = _play_old_quarter.bind(data, approved)
+		elif act == ProposalData.CityAction.DRILL or act == ProposalData.CityAction.NO_DRILL:
+			play = _play_drill.bind(data, approved)
+		elif act == ProposalData.CityAction.CRACKS:
+			play = _play_cracks.bind(data, approved)
+		elif act == ProposalData.CityAction.TRAINING:
+			play = _play_training.bind(data, approved)
+		elif act == ProposalData.CityAction.TENTS:
+			play = _play_tents.bind(data, approved)
+		elif data.cutscene(approved) != ProposalData.Cutscene.NONE:
+			play = _play_cutscene.bind(data, approved)
+		else:
+			if data.city_target == "":
+				continue
+			if act == ProposalData.CityAction.NONE and data.caption(approved) == "":
+				continue   # nothing to see (e.g. the Contractor turned away)
+			var node := _city.get_node_or_null(NodePath(data.city_target)) as Node3D
+			if node == null:
+				push_warning("DayCycle: city target '%s' of %s not found in %s" % [data.city_target, data.id, CITY_SCENE])
+				continue
+			play = _play_target.bind(data, approved, node)
 		if shown > 0:
 			await _hide_caption()
 		shown += 1
-		await _fly_to(node)
-		_type_caption(data.caption(approved))
-		if data.action(approved) == ProposalData.CityAction.BUILD and node.has_method("build") \
-				and not node.is_built():
-			node.build()
-			var limit := float(node.get("build_time")) + 3.0
-			var waited := 0.0
-			while not node.is_built() and waited < limit:
-				await get_tree().process_frame
-				waited += get_process_delta_time()
-			await get_tree().create_timer(3.2).timeout   # cheer, sign, jingle
-		else:
-			await get_tree().create_timer(5.0).timeout
+		_watch(true)
+		await play.call()
+		_watch(false)
 	if shown == 0:
 		_type_caption(QUIET_DAY)
-		await get_tree().create_timer(4.0).timeout
+		_watch(true)
+		await _wait(2.5)
+		_watch(false)
 
 	await _back_to_office()
+
+
+## A plain change at a spot in the city: fly there, show the caption and, for
+## a BUILD, watch it go up.
+func _play_target(data: Resource, approved: bool, node: Node3D) -> void:
+	await _fly_to(node)
+	_type_caption(data.caption(approved))
+	if data.action(approved) == ProposalData.CityAction.BUILD and node.has_method("build") \
+			and not node.is_built():
+		node.set("build_time", minf(float(node.get("build_time")), EVENING_BUILD_TIME))
+		node.build()
+		var limit := float(node.get("build_time")) + 3.0
+		var waited := 0.0
+		while not node.is_built() and waited < limit and not _skip:
+			await get_tree().process_frame
+			waited += get_process_delta_time()
+		await _wait(1.6)   # cheer, sign, jingle
+	else:
+		await _wait(2.8)
 
 
 func _back_to_office() -> void:
 	# fade to black, back at the desk, next day
 	_fade.color = Color(0, 0, 0, _fade.color.a)
 	var t := create_tween()
-	t.tween_property(_fade, "color:a", 1.0, 0.8)
-	t.parallel().tween_property(_caption_box, "modulate:a", 0.0, 0.6)
+	t.tween_property(_fade, "color:a", 1.0, 0.5)
+	t.parallel().tween_property(_caption_box, "modulate:a", 0.0, 0.4)
 	if _concert:
-		_concert.fade_out(0.8)
+		_concert.fade_out(0.5)
+	if _drill:
+		_drill.fade_out(0.5)
+	if _training:
+		_training.fade_out(0.5)
 	await t.finished
+	if _drill:
+		_drill.close()   # everyone goes home
+		_drill = null
+	if _training:
+		_training.close()   # hoses rolled up, crews back inside
+		_training = null
 	if _concert:
 		_concert.close()   # the stage comes down overnight
 		_concert = null
+	if _old_quarter:
+		_old_quarter.clear_transients()   # builders go home, tumbleweeds gone
 	_kill(_orbit)
 	if _city:
 		_show_city(false)
@@ -265,10 +421,10 @@ func _back_to_office() -> void:
 	_day_label.modulate.a = 0.0
 	_day_label.visible = true
 	var d := create_tween()
-	d.tween_property(_day_label, "modulate:a", 1.0, 0.5)
-	d.tween_interval(1.0)
-	d.tween_property(_fade, "color:a", 0.0, 1.0)
-	d.parallel().tween_property(_day_label, "modulate:a", 0.0, 0.8).set_delay(0.3)
+	d.tween_property(_day_label, "modulate:a", 1.0, 0.35)
+	d.tween_interval(0.6)
+	d.tween_property(_fade, "color:a", 0.0, 0.6)
+	d.parallel().tween_property(_day_label, "modulate:a", 0.0, 0.5).set_delay(0.2)
 	await d.finished
 	_day_label.visible = false
 	busy = false
@@ -290,54 +446,40 @@ func _evening_order() -> Array[Dictionary]:
 	return order
 
 
-## The Influencer's night on the beach. The caption is split on "|" into
-## lines that are typed and read aloud one after another:
-##   1. wide view of the stage while night falls and the intro plays
-##   2. down in the crowd while the music builds
-##   3. the drop: lasers, confetti, fireworks, camera cranes up and back
+## The Influencer's night on the beach, kept short (about 7 seconds): night
+## falls while the camera flies in on a quick build-up, the drop hits about
+## two seconds in (lasers, confetti, fireworks) and the camera cranes back.
+## The caption is read out once over the whole thing.
 func _play_concert(data: Resource, approved: bool) -> void:
-	var lines: PackedStringArray = data.caption(approved).split("|", false)
-	var voice: AudioStream = data.voice(approved) if lines.size() <= 1 else null
+	var text: String = data.caption(approved).replace("|", " ").strip_edges()
 	_concert = BeachConcert.new()
 	_concert.name = "BeachConcert"
 	_city.add_child(_concert)
 	_concert.setup(_city)
-	_concert.start()
-	_concert.nightfall(5.0)
-	await _fly_to(_concert.rig)
-	await _concert_line(lines, 0, voice)
-
-	_concert.queue_part(BeachConcert.Part.BUILD)
-	var crowd: Array = _concert.crowd_shot()
-	await _glide(crowd[0], crowd[1], 3.6, crowd[2])
-	await _concert_line(lines, 1, null)
-
-	_concert.queue_part(BeachConcert.Part.DROP)
+	_concert.start(BeachConcert.Part.BUILD)
+	_concert.queue_part(BeachConcert.Part.DROP)   # on the next bar, ~2 s in
+	_concert.nightfall(1.2)
+	_type_caption(text)
+	_concert_talk(text.replace("*", ""), data.voice(approved))
+	await _fly_to(_concert.rig, 1.4)
+	var wide: Array = _concert.wide_shot()
+	_glide(wide[0], wide[1], 4.5, wide[2])
 	var waited := 0.0
-	while _concert.part != BeachConcert.Part.DROP and waited < 6.0:
+	while (waited < 3.5 or _talking) and waited < 5.0 and not _skip:
 		await get_tree().process_frame
 		waited += get_process_delta_time()
-	var wide: Array = _concert.wide_shot()
-	_glide(wide[0], wide[1], 9.0, wide[2])
-	await get_tree().create_timer(3.0).timeout
-	for i in range(2, maxi(lines.size(), 3)):
-		await _concert_line(lines, i, null)
-	await get_tree().create_timer(6.0).timeout
-	_concert.queue_part(BeachConcert.Part.OUTRO)
 
 
-## Type caption line `i` and read it out, with the music turned down.
-func _concert_line(lines: PackedStringArray, i: int, voice: AudioStream) -> void:
-	if i >= lines.size():
-		await get_tree().create_timer(4.0).timeout   # just enjoy the show
-		return
-	var text := lines[i].strip_edges()
-	_type_caption(text)
+var _talking := false
+
+## Read the concert caption out over the music (not awaited by the show).
+func _concert_talk(spoken: String, voice: AudioStream) -> void:
+	_talking = true
 	_concert.duck(true)
-	await _narrate(text.replace("*", ""), voice)
-	_concert.duck(false)
-	await get_tree().create_timer(1.4).timeout
-	await _hide_caption()
+	await _narrate(spoken, voice)
+	if _concert:
+		_concert.duck(false)
+	_talking = false
 
 
 ## Glide the city camera to `to`, looking at `look`, then keep creeping along
@@ -354,7 +496,242 @@ func _glide(to: Vector3, look: Vector3, time: float, creep := Vector3.ZERO) -> v
 		_orbit.tween_method(func(k: float) -> void:
 			_city_cam.look_at_from_position(to + creep * k, look, Vector3.UP), 0.0, 1.0, 20.0) \
 			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	await get_tree().create_timer(time).timeout
+	await _wait(time)
+
+
+# ================================================================ old quarter
+
+## The Minister of Urban Planning's choice. Approved: fly over the Old Quarter
+## while the builders brace and repair every building. Denied: drop into its
+## empty main street and watch the tumbleweeds roll by.
+func _play_old_quarter(data: Resource, approved: bool) -> void:
+	var q = _ensure_old_quarter()
+	if q == null:
+		_type_caption(data.caption(approved))
+		await _wait(2.8)
+		return
+	if data.action(approved) == ProposalData.CityAction.REPAIR and not q.repaired:
+		var shot: Array = q.district_shot()
+		q.prepare()   # the builders are already at it when we get there
+		await _glide(shot[0], shot[1], 2.0, shot[2])
+		_type_caption(data.caption(approved))
+		await _until_done(q.repair)   # skipped: the repair finishes off-camera
+		q.celebrate()
+		await _wait(1.4)
+	else:
+		var high: Array = q.street_drop_shot()
+		var low: Array = q.street_shot()
+		await _glide(high[0], high[1], 1.5)
+		await _glide(low[0], low[1], 1.2, low[2])
+		_type_caption(data.caption(approved))
+		q.tumbleweeds(2)   # they keep rolling; we don't wait for them to cross
+		await _wait(3.2)
+
+
+func _ensure_old_quarter():
+	if _old_quarter == null and _city:
+		var q = OldQuarterWorks.new()
+		q.name = "OldQuarterWorks"
+		_city.add_child(q)
+		if not q.setup(_city):
+			push_warning("DayCycle: no Districts/OldQuarter in %s" % CITY_SCENE)
+			q.queue_free()
+			return null
+		_old_quarter = q
+	return _old_quarter
+
+
+# ================================================================ central park
+
+## The Chief Seismologist's Sunday drill. Approved: the sirens go, the camera
+## comes over the fountain plaza packed with the whole town (more still
+## walking in, marshals waving them on) and the caption is read out over the
+## crowd. Denied: drop down to the empty plaza, an old man dozing on a bench,
+## one passer-by, and tumbleweeds rolling across while the caption is read.
+func _play_drill(data: Resource, approved: bool) -> void:
+	var text: String = data.caption(approved)
+	var spoken := text.replace("*", "")
+	_drill = CentralParkDrill.new()
+	_drill.name = "CentralParkDrill"
+	_city.add_child(_drill)
+	if not _drill.setup(_city):
+		push_warning("DayCycle: no %s in %s" % [CentralParkDrill.PARK, CITY_SCENE])
+		_drill.queue_free()
+		_drill = null
+		_type_caption(text)
+		await _narrate(spoken, data.voice(approved))
+		return
+	if data.action(approved) == ProposalData.CityAction.DRILL:
+		_drill.start_drill()
+		var shot: Array = _drill.drill_shot()
+		await _glide(shot[0], shot[1], 2.0, shot[2])
+		_drill.duck(true)
+		_type_caption(text)
+		await _narrate(spoken, data.voice(approved))
+		_drill.duck(false)
+		await _wait(0.5)
+	else:
+		var roll: float = _drill.start_empty()
+		var high: Array = _drill.empty_drop_shot()
+		var low: Array = _drill.empty_shot()
+		var started := Time.get_ticks_msec()
+		await _glide(high[0], high[1], 1.5)
+		await _glide(low[0], low[1], 1.2, low[2])
+		_type_caption(text)
+		await _narrate(spoken, data.voice(approved))
+		# let the last tumbleweed get across
+		var left := roll - (Time.get_ticks_msec() - started) / 1000.0
+		await _wait(clampf(left, 0.3, 1.0))
+
+
+# ================================================================ fire training
+
+## The foreign rescue team's free training. The fire station (city_target)
+## goes up first if it hasn't yet, then the camera comes round the front where
+## an instructor whistles and two hose teams open up, their arcs of water
+## crossing over the apron, while the caption is read out over the hiss.
+func _play_training(data: Resource, approved: bool) -> void:
+	var text: String = data.caption(approved)
+	var spoken := text.replace("*", "")
+	var node := _city.get_node_or_null(NodePath(data.city_target)) as Node3D
+	if node == null:
+		push_warning("DayCycle: city target '%s' of %s not found in %s" % [data.city_target, data.id, CITY_SCENE])
+		_type_caption(text)
+		await _narrate(spoken, data.voice(approved))
+		return
+	if node.has_method("build") and not node.is_built():
+		await _fly_to(node)
+		node.set("build_time", minf(float(node.get("build_time")), EVENING_BUILD_TIME))
+		node.build()
+		var limit := float(node.get("build_time")) + 3.0
+		var waited := 0.0
+		while not node.is_built() and waited < limit and not _skip:
+			await get_tree().process_frame
+			waited += get_process_delta_time()
+		await _wait(0.6)
+	_training = FireTraining.new()
+	_training.name = "FireTraining"
+	_city.add_child(_training)
+	_training.setup(node)
+	_training.start()   # whistle, then the nozzles open one after the other
+	var shot: Array = _training.shot()
+	await _glide(shot[0], shot[1], 2.0, shot[2])
+	_training.duck(true)
+	_type_caption(text)
+	await _narrate(spoken, data.voice(approved))
+	_training.duck(false)
+	await _wait(0.8)
+
+
+# ================================================================ shelter tents
+
+## The Head of Disaster Agency's shelter camp. The camera comes over Central
+## Park's east lawn, and while the caption is read out evacuation signs spring
+## up at the park gates and rows of tents pop up around the shelter gate. The
+## camp stays (it lives under the park in the city); seen again on a later
+## evening, it is simply there.
+func _play_tents(data: Resource, approved: bool) -> void:
+	var text: String = data.caption(approved)
+	var spoken := text.replace("*", "")
+	var park := _city.get_node_or_null(ParkTents.PARK) as Node3D
+	if park == null:
+		push_warning("DayCycle: no %s in %s" % [ParkTents.PARK, CITY_SCENE])
+		_type_caption(text)
+		await _narrate(spoken, data.voice(approved))
+		return
+	var camp = park.get_node_or_null("ShelterCamp")
+	var fresh: bool = camp == null
+	if fresh:
+		camp = ParkTents.new()
+		park.add_child(camp)
+		camp.setup(park)
+	var shot: Array = camp.shot()
+	await _glide(shot[0], shot[1], 2.2, shot[2])
+	_type_caption(text)
+	if fresh:
+		camp.raise()   # pops up while the caption is read
+	await _narrate(spoken, data.voice(approved))
+	while not camp.done and not _skip:
+		await get_tree().process_frame
+	if not camp.done:
+		camp.finish()   # skipped: everything is up by the next evening
+	await _wait(0.8)
+
+
+# ================================================================ cracks
+
+## The Contractor's cheap concrete. The building (city_target) goes up first
+## if it hasn't yet, then the camera swings round behind it and a few cracks
+## spread over its back wall and the ground behind it.
+func _play_cracks(data: Resource, approved: bool) -> void:
+	var node := _city.get_node_or_null(NodePath(data.city_target)) as Node3D
+	if node == null:
+		push_warning("DayCycle: city target '%s' of %s not found in %s" % [data.city_target, data.id, CITY_SCENE])
+		_type_caption(data.caption(approved))
+		await _wait(2.8)
+		return
+	if node.has_method("build") and not node.is_built():
+		await _fly_to(node)
+		node.set("build_time", minf(float(node.get("build_time")), EVENING_BUILD_TIME))
+		node.build()
+		var limit := float(node.get("build_time")) + 3.0
+		var waited := 0.0
+		while not node.is_built() and waited < limit and not _skip:
+			await get_tree().process_frame
+			waited += get_process_delta_time()
+		await _wait(0.8)
+	var cracks = node.get_node_or_null("Cracks")
+	var fresh := cracks == null
+	if fresh:
+		cracks = HospitalCracks.new()
+		node.add_child(cracks)
+		cracks.setup(node)
+	await _swing_behind(node, 2.0)
+	await _wait(0.1)
+	_type_caption(data.caption(approved))
+	if fresh:
+		await _until_done(cracks.grow)   # skipped: they finish spreading anyway
+	await _wait(1.2)
+
+
+## Circle round to a 3/4 view of the back of `node` (the same framing as
+## _fly_to), going round the building rather than through it, then keep
+## drifting slowly while the cracks show.
+func _swing_behind(node: Node3D, time := 3.0) -> void:
+	_kill(_orbit)
+	var s := node.global_basis.get_scale().x
+	var origin := node.global_position
+	var front := node.global_basis.z
+	front.y = 0.0
+	front = front.normalized() if front.length() > 0.001 else Vector3.FORWARD
+	var side := front.cross(Vector3.UP).normalized()
+	var focus := origin + Vector3.UP * 0.9 * s
+	var dist := 6.8 * s
+	var lift := 4.4 * s
+	var dir1 := (-front * 0.85 + side * 0.55).normalized()
+
+	var p0 := _city_cam.global_position
+	var rel := p0 - origin
+	var r0 := Vector2(rel.x, rel.z).length()
+	var a0 := atan2(rel.x, rel.z)
+	var a1 := atan2(dir1.x, dir1.z)
+	var da := wrapf(a1 - a0, -PI, PI)
+	var t0 := _ground_point(_city_cam.global_transform)
+	_orbit = create_tween()   # kept in _orbit so the next shot can cut it off
+	_orbit.tween_method(func(k: float) -> void:
+		var a := a0 + da * k
+		var r := lerpf(r0, dist, k)
+		var pos := origin + Vector3(sin(a), 0.0, cos(a)) * r + Vector3.UP * lerpf(rel.y, lift, k)
+		_city_cam.look_at_from_position(pos, t0.lerp(focus, minf(k * 2.5, 1.0)), Vector3.UP),
+		0.0, 1.0, time).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	await _until_tween(_orbit)
+	if _skip:
+		return
+	_orbit = create_tween()
+	_orbit.tween_method(func(a: float) -> void:
+		var d := dir1.rotated(Vector3.UP, a)
+		_city_cam.look_at_from_position(origin + d * dist + Vector3.UP * lift, focus, Vector3.UP),
+		0.0, deg_to_rad(-14.0), 12.0).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 
 
 # ================================================================ cutscenes
@@ -369,33 +746,40 @@ func _play_cutscene(data: Resource, approved: bool) -> void:
 	_ui.move_child(cs, _caption_box.get_index())   # under the caption
 	cs.modulate.a = 0.0
 	var f := create_tween()
-	f.tween_property(cs, "modulate:a", 1.0, 0.5)
-	await f.finished
-	await cs.intro()
-	await get_tree().create_timer(0.4).timeout
+	f.tween_property(cs, "modulate:a", 1.0, 0.25)
+	await _until_tween(f)
+	await _until_done(cs.intro)
+	await _wait(0.1)
 	_type_caption(text)
 	cs.talking = true
 	await _narrate(spoken, data.voice(approved))
 	cs.talking = false
 	cs.wake_up()
-	await get_tree().create_timer(1.6).timeout
+	await _wait(0.6)
+	if _skip:
+		# skipped: drop the scene now; the caption fades with the next event
+		_kill(f)
+		cs.queue_free()
+		return
 	await _hide_caption()
 	await cs.outro()
 	var o := create_tween()
-	o.tween_property(cs, "modulate:a", 0.0, 0.5)
+	o.tween_property(cs, "modulate:a", 0.0, 0.25)
 	await o.finished
 	cs.queue_free()
 
 
 ## About how long it takes to say `text`, in seconds.
 func _speech_time(text: String) -> float:
-	return clampf(text.split(" ", false).size() / 2.6, 2.5, 30.0)
+	return clampf(text.split(" ", false).size() / 3.4, 2.0, 30.0)
 
 
 ## Read `text` aloud: the recording if there is one, else text-to-speech
 ## (Project Settings > Audio > General > Text to Speech must be on), else
 ## just wait as long as reading it would take. Returns when it's done.
 func _narrate(text: String, stream: AudioStream) -> void:
+	if _skip:
+		return
 	var limit := _speech_time(text) * 2.0 + 3.0
 	var waited := 0.0
 	if stream:
@@ -403,19 +787,24 @@ func _narrate(text: String, stream: AudioStream) -> void:
 		p.stream = stream
 		add_child(p)
 		p.play()
+		_voice = p
 		limit = maxf(stream.get_length(), 1.0) + 1.0
-		while p.playing and waited < limit:
+		while p.playing and waited < limit and not _skip:
 			await get_tree().process_frame
 			waited += get_process_delta_time()
+		p.stop()
 		p.queue_free()
 		return
 	if _tts_ready():
 		DisplayServer.tts_stop()
-		DisplayServer.tts_speak(text, _tts_voice, 80, 1.0, 0.95)
+		DisplayServer.tts_speak(text, _tts_voice, 80, 1.0, TTS_RATE)
 		var started := false
 		while waited < limit:
 			await get_tree().process_frame
 			waited += get_process_delta_time()
+			if _skip:
+				DisplayServer.tts_stop()
+				return
 			if DisplayServer.tts_is_speaking():
 				started = true
 			elif started or waited > 1.5:
@@ -423,7 +812,7 @@ func _narrate(text: String, stream: AudioStream) -> void:
 		if started:
 			return
 		push_warning("DayCycle: text-to-speech didn't start, showing the caption only")
-	await get_tree().create_timer(maxf(_speech_time(text) - waited, 0.5)).timeout
+	await _wait(maxf(_speech_time(text) - waited, 0.5))
 
 
 func _tts_ready() -> bool:
@@ -475,7 +864,7 @@ func _drift(from: Transform3D, target: Vector3, time: float) -> void:
 
 ## Fly from wherever the city camera is to a 3/4 view of the node, then keep
 ## circling it slowly while the change plays out.
-func _fly_to(node: Node3D) -> void:
+func _fly_to(node: Node3D, time := 2.0) -> void:
 	_kill(_orbit)
 	_signs(node, true)
 	var s := node.global_basis.get_scale().x
@@ -492,13 +881,15 @@ func _fly_to(node: Node3D) -> void:
 
 	var p0 := _city_cam.global_position
 	var t0 := _ground_point(_city_cam.global_transform)
-	var fly := create_tween()
-	fly.tween_method(func(k: float) -> void:
+	_orbit = create_tween()   # kept in _orbit so the next shot can cut it off
+	_orbit.tween_method(func(k: float) -> void:
 		var look_k := 1.0 - pow(1.0 - k, 2.2)      # turn toward it early
 		var pos := p0.lerp(goal, k) + Vector3.UP * sin(k * PI) * 0.15 * p0.distance_to(goal)
-		_city_cam.look_at_from_position(pos, t0.lerp(focus, look_k), Vector3.UP), 0.0, 1.0, 3.2) \
+		_city_cam.look_at_from_position(pos, t0.lerp(focus, look_k), Vector3.UP), 0.0, 1.0, time) \
 		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	await fly.finished
+	await _until_tween(_orbit)
+	if _skip:
+		return
 	# circle a little while we watch
 	_orbit = create_tween()
 	_orbit.tween_method(func(a: float) -> void:
@@ -733,7 +1124,7 @@ func _type_caption(text: String) -> void:
 
 func _hide_caption() -> void:
 	var t := create_tween()
-	t.tween_property(_caption, "modulate:a", 0.0, 0.4)
+	t.tween_property(_caption, "modulate:a", 0.0, 0.25)
 	await t.finished
 
 

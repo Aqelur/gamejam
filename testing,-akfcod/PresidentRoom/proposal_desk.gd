@@ -166,7 +166,7 @@ func _slam(s: Node3D, spot: Vector3) -> void:
 	_busy = true
 	has_proposal = false
 	var approved: bool = s.get_meta("approved")
-	var paper_top: float = room.paper.global_position.y + 0.002
+	var paper_top: float = room.paper.global_position.y + 0.0045
 	var down := Vector3(spot.x, to_local(Vector3(0, paper_top, 0)).y, spot.z)
 	var t := create_tween()
 	# wind up, then hit
@@ -207,7 +207,7 @@ func _ink(spot: Vector3, approved: bool) -> void:
 	# where it came down, kept inside the sheet so the whole mark prints
 	var local := paper.to_local(global_transform * spot)
 	var room_half: Vector2 = room.PAPER_SIZE * 0.5 - room.STAMP_FACE * 0.5 - Vector2(0.012, 0.012)
-	mark.position = Vector3(clampf(local.x, -room_half.x, room_half.x), 0.0035,
+	mark.position = Vector3(clampf(local.x, -room_half.x, room_half.x), 0.0045,
 		clampf(local.z, -room_half.y, room_half.y))
 	mark.rotation_degrees.y = randf_range(-9.0, 9.0)
 

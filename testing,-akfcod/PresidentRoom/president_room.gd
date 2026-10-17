@@ -75,12 +75,14 @@ enum Stat { AWARENESS, MONEY, INFRASTRUCTURE, BUREAUCRACY }
 @export var paper_title := "PROPOSAL":
 	set(v):
 		paper_title = v
-		_refresh_paper()
+		if not _hold_paper:
+			_refresh_paper()
 ## Body text on the paper. Empty shows placeholder lines instead.
 @export_multiline var paper_text := "":
 	set(v):
 		paper_text = v
-		_refresh_paper()
+		if not _hold_paper:
+			_refresh_paper()
 ## Placeholder proposal bodies, shown one after another as visitors bring
 ## them. Empty entries (or an empty list) show grey placeholder lines.
 @export_multiline var proposal_texts: Array[String] = []
@@ -158,8 +160,11 @@ const DESK_TOP := 0.78    # desk writing surface height
 ## Seated eye point: pulled in to the desk, so the paper and stamps fill the
 ## lower half of the view.
 const EYE := Vector3(0.0, 1.2, 1.08)
-## The paper: A4, drawn a bit larger so it reads easily from the chair.
-const PAPER_SIZE := Vector2(0.21, 0.297) * 1.2
+## The paper: a big sheet, as wide as fits between the two stamps, so the
+## printed text is large and easy to read.
+const PAPER_SIZE := Vector2(0.38, 0.4)
+## Lower edge of the paper (z past DESK_Z), just above the gauge plaque.
+const PAPER_BOTTOM := 0.428
 const PAPER_YAW := -2.0
 ## Rubber face of the stamps (x by z) and where they rest (x, z).
 const STAMP_FACE := Vector2(0.15, 0.05)
@@ -220,6 +225,9 @@ var day_cycle: Node
 var camera_locked := false
 ## Proposals presented so far.
 var proposal_count := 0
+## The sections printed on the paper: "from", "says", "approve", "deny"
+## (see proposal_data.gd paper_info()). Empty uses paper_text as the body.
+var paper_info := {}
 ## Door name -> {"leaves": [hinge Node3D], "signs": [+1/-1], "node": door Node3D, "amount": 0..1}
 var doors := {}
 
@@ -231,6 +239,10 @@ var _fire_light: OmniLight3D
 var _fire_flames: Array[Node3D] = []
 var _t := 0.0
 var _rebuild_queued := false
+var _hold_paper := false     # set_paper_text() is changing several fields
+var _paper_gen := 0          # bumps each time the paper is printed again
+var _pscale := 1.0           # paper layout scale (sizes are for a 1520 px wide sheet)
+var _pfonts := {}
 var _focus := 0.0            # 0 seated view .. 1 paper close-up
 var _focus_target := 0.0
 var _gauge_mats: Array[ShaderMaterial] = []
@@ -350,10 +362,15 @@ func door_amount(door_name: String) -> float:
 	return doors[door_name].amount if doors.has(door_name) else 0.0
 
 
-func set_paper_text(text: String, title := "") -> void:
+func set_paper_text(text: String, title := "", info := {}) -> void:
+	# set everything first, then print the paper once
+	_hold_paper = true
+	paper_info = info
 	if title != "":
 		paper_title = title
 	paper_text = text
+	_hold_paper = false
+	_refresh_paper()
 
 
 ## Put the next proposal on the paper and slide it in: a real one from
@@ -362,7 +379,7 @@ func _next_proposal() -> void:
 	proposal_count += 1
 	var p: Resource = day_cycle.next_proposal() if day_cycle else null
 	if p:
-		set_paper_text(p.paper_body(), "PROPOSAL #%d" % proposal_count)
+		set_paper_text(p.paper_body(), "PROPOSAL #%d" % proposal_count, p.paper_info())
 	else:
 		var body := ""
 		if not proposal_texts.is_empty():
@@ -492,7 +509,10 @@ func is_paper_focused() -> bool:
 
 ## Bird's-eye view of the paper, the top of the sheet at the top of the screen.
 func _paper_view() -> Transform3D:
-	var centre := Vector3(0.0, paper_home.y, paper_home.z + 0.02)
+	# centred between the top of the paper and the bottom of the gauge plaque
+	var top_z := paper_home.z - PAPER_SIZE.y * 0.5
+	var bottom_z := GAUGE_Z + GAUGE_SIZE.y * 0.5
+	var centre := Vector3(0.0, paper_home.y, (top_z + bottom_z) * 0.5)
 	var b := Basis.from_euler(Vector3(deg_to_rad(closeup_pitch), 0.0, 0.0))
 	return Transform3D(b, centre + b.z * closeup_distance)
 
@@ -1383,7 +1403,7 @@ func _build_desk_items() -> void:
 
 func _build_paper() -> void:
 	# The paper lies on the pad, right in front of the player.
-	paper_home = Vector3(0.0, DESK_TOP + 0.007, DESK_Z + 0.25)
+	paper_home = Vector3(0.0, DESK_TOP + 0.007, DESK_Z + PAPER_BOTTOM - PAPER_SIZE.y * 0.5)
 	paper = group(_built, "Paper", paper_home, PAPER_YAW)
 	_fill_paper()
 
@@ -1403,32 +1423,251 @@ func _fill_paper() -> void:
 		c.queue_free()
 	var pw := PAPER_SIZE.x
 	var pd := PAPER_SIZE.y
-	var k := pw / 0.21     # text scales with the sheet
-	box(paper, "Sheet", Vector3(pw, 0.002, pd), Vector3.ZERO, mat(PAPER, 0.0, 0.95))
-	# Text faces up; its top edge points away from the player (-Z), so it reads
-	# the right way round from the chair.
-	var top := Vector3(-90, 0, 0)
-	cyl(paper, "Emblem", 0.01 * k, 0.0008, Vector3(0, 0.002, -pd * 0.5 + 0.025 * k), gold(), 20)
-	label(paper, "Title", paper_title, Vector3(0, 0.0045, -pd * 0.5 + 0.056 * k), 0.00038 * k, INK, INK, top, 0)
-	box(paper, "Rule", Vector3(pw - 0.04 * k, 0.0008, 0.0015), Vector3(0, 0.002, -pd * 0.5 + 0.08 * k), mat(INK))
-	if paper_text.strip_edges() != "":
-		var body := label(paper, "Body", paper_text, Vector3(-pw * 0.5 + 0.02 * k, 0.0045, -pd * 0.5 + 0.09 * k), 0.00022 * k, INK, INK, top, 0)
-		body.uppercase = false
-		body.vertical_alignment = VERTICAL_ALIGNMENT_TOP
-		body.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-		body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		body.width = (pw - 0.04 * k) / body.pixel_size
-		body.font_size = 48
+	# the sheet sits just under y = 0, the print a little above it, and the
+	# stamp ink (proposal_desk.gd) a little above that, so none of them flicker
+	box(paper, "Sheet", Vector3(pw, 0.002, pd), Vector3(0, -0.0015, 0), mat(PAPER, 0.0, 0.95))
+	# Everything printed on the sheet is laid out as 2D controls (real fonts,
+	# colours, wrapping) in a SubViewport, then laid on the sheet as a texture.
+	var px := Vector2i(roundi(pw * PAPER_PX), roundi(pd * PAPER_PX))
+	var vp := SubViewport.new()
+	vp.name = "PrintViewport"
+	vp.size = px
+	vp.disable_3d = true
+	vp.transparent_bg = false
+	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	vp.add_child(_paper_layout(Vector2(px)))
+	paper.add_child(vp)
+	var q := QuadMesh.new()
+	q.size = Vector2(pw, pd)
+	var face := MeshInstance3D.new()
+	face.name = "Print"
+	face.mesh = q
+	# faces up; the top of the page points away from the player (-Z)
+	face.rotation_degrees.x = -90.0
+	face.position.y = 0.002
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = vp.get_texture()
+	m.roughness = 0.95
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	face.material_override = m
+	no_shadow(face)
+	paper.add_child(face)
+	_paper_gen += 1
+	_bake_paper(vp, m, _paper_gen)
+
+
+## Once the layout has settled, keep a still copy of the print (with mipmaps,
+## so it stays sharp from the chair too) and drop the viewport.
+func _bake_paper(vp: SubViewport, m: StandardMaterial3D, gen: int) -> void:
+	var frames := 0
+	while frames < 3:
+		await RenderingServer.frame_post_draw
+		if gen != _paper_gen or not is_instance_valid(vp):
+			return
+		if vp.is_inside_tree():
+			frames += 1
+	var img := vp.get_texture().get_image()
+	if img == null or img.is_empty():
+		return  # keep showing the live viewport
+	img.generate_mipmaps()
+	m.albedo_texture = ImageTexture.create_from_image(img)
+	vp.queue_free()
+
+
+# ---------------------------------------------------------------- paper print
+# Colours and fonts printed on the proposal. Sizes are in pixels of a 1520 px
+# wide sheet (scaled if PAPER_PX or PAPER_SIZE change).
+
+## Resolution of the print on the paper (pixels per metre of sheet).
+const PAPER_PX := 4000.0
+const PAPER_FONT_DIR := "res://PresidentRoom/fonts/"
+const PRINT_TITLE := NAVY
+const PRINT_MUTED := Color(0.42, 0.44, 0.52)
+const PRINT_FROM := Color(0.6, 0.34, 0.04)          # warm amber: who sent it
+const PRINT_QUOTE_BG := Color(1.0, 0.995, 0.98)
+const PRINT_QUOTE_BAR := NAVY
+const PRINT_TEXT := Color(0.12, 0.12, 0.16)
+const PRINT_GOLD := Color(0.8, 0.6, 0.12)
+
+
+func _paper_layout(size_px: Vector2) -> Control:
+	_pscale = size_px.x / 1520.0
+	var info: Dictionary = paper_info
+	var says: String = info.get("says", paper_text)
+	var from: String = info.get("from", "")
+
+	var root := ColorRect.new()
+	root.color = PAPER
+	root.size = size_px
+	# official double frame round the page
+	_pframe(root, size_px, 30, 4, PRINT_TITLE)
+	_pframe(root, size_px, 44, 2, PRINT_GOLD)
+
+	var margin := MarginContainer.new()
+	margin.size = size_px
+	margin.add_theme_constant_override("margin_left", _pt(96))
+	margin.add_theme_constant_override("margin_right", _pt(96))
+	margin.add_theme_constant_override("margin_top", _pt(74))
+	margin.add_theme_constant_override("margin_bottom", _pt(70))
+	root.add_child(margin)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 0)
+	margin.add_child(col)
+
+	# --- heading: seal, title, gold rule
+	var seal_row := CenterContainer.new()
+	col.add_child(seal_row)
+	var seal := Panel.new()
+	seal.custom_minimum_size = Vector2(_pt(64), _pt(64))
+	seal.add_theme_stylebox_override("panel", _pstyle(Color(0.95, 0.75, 0.2), Color(0.7, 0.5, 0.08), 5, 32))
+	seal_row.add_child(seal)
+	_pgap(col, 14)
+	var title := _ptext(col, paper_title.to_upper(), _pfont("Montserrat-ExtraBold.ttf", 6), 74, PRINT_TITLE)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_pgap(col, 16)
+	_prule(col, PRINT_GOLD, 5)
+	_pgap(col, 40)
+
+	if says.strip_edges() == "" and from == "":
+		# no text yet: grey placeholder lines
+		for w in [0.95, 1.0, 0.9, 1.0, 0.7, 1.0, 0.95, 0.5]:
+			var line := ColorRect.new()
+			line.color = Color(0.78, 0.78, 0.8)
+			line.custom_minimum_size = Vector2(0, _pt(16))
+			line.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+			line.custom_minimum_size.x = (size_px.x - _pt(192)) * w
+			col.add_child(line)
+			_pgap(col, 34)
 	else:
-		# placeholder lines of text
-		var line := mat(Color(0.55, 0.55, 0.58))
-		var widths := [0.16, 0.17, 0.15, 0.17, 0.12, 0.17, 0.16, 0.09]
-		for i in widths.size():
-			var lw: float = widths[i] * k
-			box(paper, "Line%d" % i, Vector3(lw, 0.0008, 0.004),
-				Vector3(-pw * 0.5 + 0.02 * k + lw * 0.5, 0.002, -pd * 0.5 + (0.095 + i * 0.016) * k), line)
-	# signature line
-	box(paper, "Signature", Vector3(0.07 * k, 0.0008, 0.0012), Vector3(pw * 0.5 - 0.055 * k, 0.002, pd * 0.5 - 0.03 * k), mat(INK))
+		# --- who sent it
+		if from != "":
+			var from_tag := "FROM" if from.to_lower().begins_with("the ") else "FROM THE"
+			_ptext(col, from_tag, _pfont("Montserrat-SemiBold.ttf", 5), 30, PRINT_MUTED)
+			_pgap(col, 4)
+			_ptext(col, from.to_upper(), _pfont("Montserrat-ExtraBold.ttf", 2), 62, PRINT_FROM)
+			_pgap(col, 30)
+		# --- what they say: big, bold, in a box with a navy bar down its left
+		if says.strip_edges() != "":
+			var quote := PanelContainer.new()
+			var st := _pstyle(PRINT_QUOTE_BG, PRINT_QUOTE_BAR, 2, 12)
+			st.border_width_left = _pt(14)
+			st.set_content_margin_all(_pt(44))
+			st.content_margin_left = _pt(56)
+			quote.add_theme_stylebox_override("panel", st)
+			col.add_child(quote)
+			var text := "“%s”" % says.strip_edges()
+			var font := _pfont("Montserrat-Bold.ttf")
+			# as large as fits the space left on the page (sizes in sheet px)
+			var text_w := size_px.x - _pt(96) * 2 - _pt(56) - _pt(44)
+			var fit := _fit_size(text, font, text_w, _pt(900), 104, 56)
+			var body := _ptext(quote, text, font, fit, PRINT_TEXT)
+			body.add_theme_constant_override("line_spacing", _pt(fit * 0.28))
+
+	# --- signature, pushed to the bottom right
+	var fill := Control.new()
+	fill.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	col.add_child(fill)
+	var sig := VBoxContainer.new()
+	sig.size_flags_horizontal = Control.SIZE_SHRINK_END
+	sig.add_theme_constant_override("separation", _pt(8))
+	col.add_child(sig)
+	var sig_line := ColorRect.new()
+	sig_line.color = PRINT_TEXT
+	sig_line.custom_minimum_size = Vector2(_pt(380), _pt(3))
+	sig.add_child(sig_line)
+	_ptext(sig, "SIGNATURE", _pfont("Montserrat-SemiBold.ttf", 4), 22, PRINT_MUTED).horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	return root
+
+
+## The biggest font size (sheet px, from max_px down to min_px) at which the
+## text, wrapped to width, stays within height.
+func _fit_size(text: String, font: Font, width: float, height: float, max_px: int, min_px: int) -> int:
+	var px := max_px
+	while px > min_px:
+		var lines := font.get_multiline_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, width, _pt(px),
+			-1, TextServer.BREAK_MANDATORY | TextServer.BREAK_WORD_BOUND | TextServer.BREAK_ADAPTIVE)
+		var count := ceili(lines.y / font.get_height(_pt(px)))
+		if lines.y + count * _pt(px * 0.28) <= height:
+			break
+		px -= 4
+	return px
+
+
+func _pt(n: float) -> int:
+	return maxi(roundi(n * _pscale), 1)
+
+
+## A font from PresidentRoom/fonts (the default font if it is missing), with
+## extra letter spacing in sheet pixels.
+func _pfont(file: String, spacing := 0) -> Font:
+	var key := "%s|%d|%f" % [file, spacing, _pscale]
+	if _pfonts.has(key):
+		return _pfonts[key]
+	var f: Font = null
+	var path := PAPER_FONT_DIR + file
+	if ResourceLoader.exists(path):
+		f = load(path) as Font
+	if f == null and ResourceLoader.exists(PAPER_FONT_DIR + "Montserrat-Bold.ttf"):
+		f = load(PAPER_FONT_DIR + "Montserrat-Bold.ttf") as Font
+	if f == null:
+		f = ThemeDB.fallback_font
+	if spacing != 0:
+		var fv := FontVariation.new()
+		fv.base_font = f
+		fv.spacing_glyph = _pt(spacing)
+		f = fv
+	_pfonts[key] = f
+	return f
+
+
+func _ptext(parent: Control, text: String, font: Font, font_px: float, color: Color, wrap := true) -> Label:
+	var l := Label.new()
+	l.text = text
+	l.add_theme_font_override("font", font)
+	l.add_theme_font_size_override("font_size", _pt(font_px))
+	l.add_theme_color_override("font_color", color)
+	if wrap:
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	parent.add_child(l)
+	return l
+
+
+func _pstyle(bg: Color, border: Color, border_px: float, radius_px: float) -> StyleBoxFlat:
+	var st := StyleBoxFlat.new()
+	st.bg_color = bg
+	st.border_color = border
+	st.set_border_width_all(_pt(border_px))
+	st.set_corner_radius_all(_pt(radius_px))
+	st.anti_aliasing = true
+	return st
+
+
+func _pgap(parent: Control, px: float) -> void:
+	var c := Control.new()
+	c.custom_minimum_size = Vector2(0, _pt(px))
+	parent.add_child(c)
+
+
+func _prule(parent: Control, color: Color, px: float) -> void:
+	var r := ColorRect.new()
+	r.color = color
+	r.custom_minimum_size = Vector2(0, _pt(px))
+	parent.add_child(r)
+
+
+## A thin frame inset from the page edge.
+func _pframe(parent: Control, size_px: Vector2, inset_px: float, width_px: float, color: Color) -> void:
+	var p := Panel.new()
+	var st := StyleBoxFlat.new()
+	st.draw_center = false
+	st.border_color = color
+	st.set_border_width_all(_pt(width_px))
+	p.add_theme_stylebox_override("panel", st)
+	var i := float(_pt(inset_px))
+	p.position = Vector2(i, i)
+	p.size = size_px - Vector2(i, i) * 2.0
+	parent.add_child(p)
 
 
 # ---------------------------------------------------------------- stat gauges

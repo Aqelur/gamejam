@@ -1,0 +1,21 @@
+[gd_resource type="Resource" format=3]
+
+[ext_resource type="Script" path="res://PresidentRoom/proposal_data.gd" id="1_data"]
+
+[resource]
+script = ExtResource("1_data")
+id = "contractor_hospital"
+character = "The Contractor"
+says = "Mayor! I can finish your hospital in half the time. Just sign off on a little less concrete. Nobody looks inside a wall, right?"
+deny_label = "Pour all of it"
+deny_money = -10
+deny_readiness = 5
+deny_bureaucracy = 5
+approve_label = "Sign it off"
+approve_money = 15
+approve_readiness = -15
+approve_bureaucracy = -5
+approve_caption = "You let the Contractor skimp on the *concrete*. The hospital went up in half the time, and the first *cracks* are already creeping up its back wall."
+approve_action = 7
+city_target = "Districts/CivicCenter/Buildings/Hospital"
+note = "Tür: takas. Zincir: hastane, 2. halka. health_hospital APPROVED açar ve aynı gün hemen ardından masaya gelir. Onaylanınca hastane inşa edildikten sonra kamera binanın arkasına döner ve arka duvarda birkaç çatlak belirir (hospital_cracks.gd); çatlaklar oyun boyunca kalır. Reddedilince şehirde görsel bir şey olmaz (deny_caption boş, aksiyon NONE)."

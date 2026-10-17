@@ -1,0 +1,16 @@
+[gd_resource type="Resource" format=3]
+
+[ext_resource type="Script" path="res://PresidentRoom/proposal_data.gd" id="1_data"]
+
+[resource]
+script = ExtResource("1_data")
+id = "interior_inspectors"
+character = "Minister of Interior"
+start = true
+says = "The capital is cutting our building inspectors. Either we pay their salaries ourselves, or they're gone by Friday."
+deny_label = "Let them go"
+deny_readiness = -5
+deny_bureaucracy = -10
+approve_label = "Pay their salaries"
+approve_money = -15
+note = "Tür: zarar. Zincir: tek. Başkent bina müfettişlerini kesiyor. İki seçenek de kayıp: reddetmek altyapıyı ve bürokrasiyi düşürür, onaylamak kasadan para götürür. Şehirde hiçbir şey gösterilmez (caption, action, cutscene, city_target boş)."

@@ -9,17 +9,41 @@ extends Resource
 ##   start       true = can turn up from day 1; false = only once unlocked
 ##   first       true = always the very first paper of the game (before any
 ##               other start proposal)
+##   requires    id of a proposal that must have been APPROVED on an earlier
+##               day before this one can turn up ("" = no condition). E.g.
+##               "agency_fire_station": only once the fire station is built
 ##   says        what they say; printed on the paper
 ##   Denied / Approved
 ##     label     the short answer printed next to DENIED / APPROVED
 ##     people, money, readiness, bureaucracy   how much each stat changes
-##     unlocks   id of the proposal this choice opens up ("" = none). If no
-##               file has that id yet, nothing happens.
+##     unlocks   id of the proposal this choice opens up ("" = none). It is
+##               the very next paper on the desk, the same day. If no file has
+##               that id yet, nothing happens.
 ##     caption   the line shown over the city at the end of the day
 ##     action    what happens to city_target in the city: NONE or BUILD.
 ##               CONCERT puts up a one-night concert on the beach instead
 ##               (beach_concert.gd, no city_target needed); its caption can be
-##               split into narrated lines with "|"
+##               split into narrated lines with "|". REPAIR fixes up the Old
+##               Quarter (builders, then every building straightens up and is
+##               cleaned like the rest of the city); NEGLECT shows its empty
+##               street with tumbleweeds rolling past (old_quarter_works.gd,
+##               no city_target needed). DRILL fills Central Park with the
+##               whole town gathered at the fountain plaza while the noon
+##               sirens wail; NO_DRILL shows the plaza empty but for one or
+##               two people, with tumbleweeds rolling past
+##               (central_park_drill.gd, no city_target needed). Both read
+##               their caption aloud. CRACKS swings round behind city_target
+##               (built first if it isn't yet) and grows a few cracks in its
+##               back wall and the ground behind it; they stay for the rest of
+##               the game (hospital_cracks.gd). TRAINING puts a fire crew
+##               training session in front of city_target (the fire station,
+##               built first if it isn't yet): hose teams spraying arcs of
+##               water while an instructor watches (fire_training.gd); the
+##               caption is read aloud. TENTS sets up a shelter camp on
+##               Central Park's east lawn: evacuation signs at every park
+##               gate, an EMERGENCY SHELTER gate and rows of tents popping up
+##               (park_tents.gd, no city_target needed); they stay for the
+##               rest of the game and the caption is read aloud
 ##     cutscene  a little 2D scene shown at the end of the day instead of the
 ##               city fly-over, with the caption read aloud (end_cutscene.gd):
 ##               NONE, NEWS_BROADCAST (TV news, Pac-Man anchor talking) or
@@ -28,20 +52,23 @@ extends Resource
 ##               caption is read by the system text-to-speech voice
 ##   city_target node path inside City/city.tscn that the end-of-day view
 ##               flies to, e.g. "Districts/CivicCenter/Buildings/Hospital".
-##               Empty = this proposal doesn't show in the city.
+##               Empty = this proposal doesn't show in the city. A choice
+##               with action NONE, no cutscene and an empty caption isn't
+##               shown in the city either.
 ##   note        designer note, not shown in game
 ##
 ## Stats map onto the four gauges on the desk plaque (president_room.gd Stat):
 ##   people -> People's Awareness, money -> Money,
 ##   readiness -> Infrastructure, bureaucracy -> Bureaucracy.
 
-enum CityAction { NONE, BUILD, CONCERT }
+enum CityAction { NONE, BUILD, CONCERT, REPAIR, NEGLECT, DRILL, NO_DRILL, CRACKS, TRAINING, TENTS }
 enum Cutscene { NONE, NEWS_BROADCAST, CALM_CITY }
 
 @export var id := ""
 @export var character := ""
 @export var start := false
 @export var first := false
+@export var requires := ""
 @export_multiline var says := ""
 
 @export_group("Denied")
@@ -116,3 +143,9 @@ func paper_body() -> String:
 	if approve_label != "" or deny_label != "":
 		t += "\n\nAPPROVED — %s\nDENIED — %s" % [approve_label, deny_label]
 	return t
+
+
+## The sections printed on the paper, each in its own style (president_room.gd
+## _paper_layout): who it is from, what they say, and the two answers.
+func paper_info() -> Dictionary:
+	return {"from": character, "says": says, "approve": approve_label, "deny": deny_label}

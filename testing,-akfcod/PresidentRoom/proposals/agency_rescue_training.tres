@@ -1,0 +1,19 @@
+[gd_resource type="Resource" format=3]
+
+[ext_resource type="Script" path="res://PresidentRoom/proposal_data.gd" id="1_data"]
+
+[resource]
+script = ExtResource("1_data")
+id = "agency_rescue_training"
+character = "Head of Disaster Agency"
+start = true
+requires = "agency_fire_station"
+says = "A foreign rescue team offered to train our firefighters for free. I just need your signature."
+deny_label = "We'll manage"
+approve_label = "Sign it"
+approve_people = 5
+approve_readiness = 5
+approve_caption = "You signed for the *rescue training*. The visiting team put our crews through their paces, hoses out and water flying, and now our *firefighters* are ready."
+approve_action = 8
+city_target = "Districts/CivicCenter/Buildings/FireStation"
+note = "Tür: yardım. Zincir: tek. Sadece itfaiye (agency_fire_station) daha önceki bir gün ONAYLANDIYSA masaya gelir (requires). Onaylanınca gün sonunda kamera itfaiyenin önüne iner: yabancı eğitmen düdük çalar, iki hortum ekibi apronda çapraz su yayları fışkırtır, iki kursiyer kapıda izler (fire_training.gd). Ertesi gün her şey kalkar. Reddedilince etkisi yok, şehirde bir şey gösterilmez."

@@ -22,4 +22,4 @@ approve_unlocks = "contractor_hospital"
 approve_caption = "You have accepted the idea of a *Hospital*, and now our city has one."
 approve_action = 1
 city_target = "Districts/CivicCenter/Buildings/Hospital"
-note = "Şehirde hiç hastane yok. Reddetmek kasayı rahatlatır ama halkı ve hazırlığı sert düşürür. İnşaat izinleri bürokrasiyi biraz artırır. Onaylanınca contractor_hospital açılır (henüz yazılmadı)."
+note = "Şehirde hiç hastane yok. Reddetmek kasayı rahatlatır ama halkı ve hazırlığı sert düşürür. İnşaat izinleri bürokrasiyi biraz artırır. Onaylanınca contractor_hospital açılır ve hemen ardından, aynı gün masaya gelir."
