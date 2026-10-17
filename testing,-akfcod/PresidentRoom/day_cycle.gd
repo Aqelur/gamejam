@@ -1467,6 +1467,7 @@ func _ensure_city() -> bool:
 		push_warning("DayCycle: could not load %s" % CITY_SCENE)
 		return false
 	_city = packed.instantiate() as Node3D
+	_ensure_president_house()
 	# the city's own fly camera (and its debug hotkeys) stay out of this
 	var fov := 48.0
 	var ov := _city.get_node_or_null("OverviewCamera") as Camera3D
@@ -1502,6 +1503,47 @@ func _ensure_city() -> bool:
 	for n in _city.get_tree().get_nodes_in_group("buildable"):
 		_signs(n, false)
 	return true
+
+
+const PRESIDENT_PALACE_SCENE := "res://City/Civic/president_palace.tscn"
+const PRESIDENT_PALACE_GROUND := "res://Models/Custom/sidewalk.glb"
+const PRESIDENT_PALACE_XFORM := Transform3D(Basis(Vector3(0, 0, 26.926893), Vector3(0, 26.926893, 0), Vector3(-26.926893, 0, 0)), Vector3(499.33502, -0.7273283, -502.0605))
+const PRESIDENT_PALACE_GROUND_XFORM := Transform3D(Basis(Vector3(188.45, 0, 0), Vector3(0, 26.926893, 0), Vector3(0, 0, 296.19)), Vector3(499.33502, -1.804404, -502.0605))
+
+## The presidential palace fills the corner under Central Park, facing the park.
+## city.tscn places it too; this makes sure the game always shows the current
+## version in the right spot, even if city.tscn was re-saved from an editor
+## that still had an older copy open.
+func _ensure_president_house() -> void:
+	var buildings := _city.get_node_or_null("Districts/CivicCenter/Buildings")
+	if buildings == null:
+		return
+	# drop the older version if an editor saved it back into city.tscn
+	var old := buildings.get_node_or_null("PresidentHouse")
+	if old:
+		buildings.remove_child(old)
+		old.free()
+	var palace := buildings.get_node_or_null("PresidentPalace") as Node3D
+	if palace == null:
+		if not ResourceLoader.exists(PRESIDENT_PALACE_SCENE):
+			push_warning("DayCycle: missing %s" % PRESIDENT_PALACE_SCENE)
+			return
+		palace = (load(PRESIDENT_PALACE_SCENE) as PackedScene).instantiate() as Node3D
+		palace.name = "PresidentPalace"
+		buildings.add_child(palace)
+	palace.transform = PRESIDENT_PALACE_XFORM
+	var ground := _city.get_node_or_null("Districts/CivicCenter/Ground")
+	if ground == null:
+		return
+	var pad := ground.get_node_or_null("PresidentPalaceGround") as Node3D
+	if pad == null:
+		pad = ground.get_node_or_null("sidewalk4") as Node3D
+	if pad == null and ResourceLoader.exists(PRESIDENT_PALACE_GROUND):
+		pad = (load(PRESIDENT_PALACE_GROUND) as PackedScene).instantiate() as Node3D
+		pad.name = "PresidentPalaceGround"
+		ground.add_child(pad)
+	if pad:
+		pad.transform = PRESIDENT_PALACE_GROUND_XFORM
 
 
 func _bounds(n: Node3D) -> AABB:
