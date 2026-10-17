@@ -1,0 +1,11 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://PresidentRoom/president_room.gd" id="1_room"]
+
+[node name="WalkoutTest" type="Node3D"]
+script = ExtResource("1_room")
+paper_title = "DIRECTIVE"
+base_pitch = -24.0
+fov = 62.0
+test_walkout = true
+test_approved = Array[String](["health_hospital", "agency_fire_station", "interior_police"])

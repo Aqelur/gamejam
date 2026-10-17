@@ -144,9 +144,14 @@ func _process(delta: float) -> void:
 		_shake = move_toward(_shake, 0.0, delta * 0.35)
 	var s := clampf(maxf(_shake, _trauma * _trauma), 0.0, 1.0)
 	if is_instance_valid(_cam):
-		var amp := 0.06 * _tile * s
-		_cam.h_offset = _noise.get_noise_2d(_t * 22.0, 0.0) * amp
-		_cam.v_offset = _noise.get_noise_2d(0.0, _t * 22.0) * amp
+		# h/v offset moves the picture by world units, so the same offset
+		# that rocks a street-level shot is almost nothing from high up. Grow
+		# it with the camera's height so wide shots still visibly shake.
+		var reach := clampf(_cam.global_position.y / (2.0 * _tile), 1.0, 3.0)
+		var amp := 0.06 * _tile * s * reach
+		# fast jitter plus a slower roll of the ground underneath
+		_cam.h_offset = (0.75 * _noise.get_noise_2d(_t * 22.0, 0.0) + 0.45 * _noise.get_noise_2d(_t * 4.5, 50.0)) * amp
+		_cam.v_offset = (0.75 * _noise.get_noise_2d(0.0, _t * 22.0) + 0.45 * _noise.get_noise_2d(50.0, _t * 4.5)) * amp
 	_feed_sound(s)
 
 

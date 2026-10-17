@@ -29,9 +29,9 @@ const CROWD := 170           # already gathered when the camera gets there
 const ARRIVALS := 34         # still walking in
 const SPACING := 0.068       # closest two people stand
 const MIX_RATE := 22050
-## The crowd on the plaza: a real recording (Kyster, freesound #124027).
+## The crowd on the plaza: a real crowd recording (loops while people gather).
 ## It replaced the generated noise "murmur", which sounded like a grating hiss.
-const CROWD_SFX := "res://PresidentRoom/124027__kyster__big-crowd-chatter.wav"
+const CROWD_SFX := "res://PresidentRoom/crowd_noise.mp3"
 const CROWD_DB := -8.0
 const SAND := Color(0.82, 0.72, 0.55, 0.55)
 const VEST := Color(1.0, 0.82, 0.05)

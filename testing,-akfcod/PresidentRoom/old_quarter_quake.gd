@@ -40,6 +40,14 @@ extends Node3D
 ## city is 27 times bigger. So BuildingQuake only moves, breaks and drops the
 ## buildings here, and this script adds the dust, glass, debris, rubble and
 ## people itself, scaled up to the city.
+##
+## So it reads as an earthquake and not a storm, especially from the wide
+## shot: the motion comes from the GROUND. A low band of dust rolls out from
+## the fault across the streets (the seismic wave), and every building and
+## prop shakes with the same ground motion, so neighbours move together and
+## the shaking visibly travels outward. Dust is heavy: it hugs the ground,
+## billows out and settles, without wind swirl or spin. Debris spills DOWN off
+## the walls and skitters along the street; nothing is flung into the sky.
 
 const EarthquakeEnding := preload("res://PresidentRoom/earthquake_ending.gd")
 const DISTRICT := "Districts/OldQuarter"
@@ -98,9 +106,10 @@ const CRACKS := 5
 const PEOPLE_SCALE := 1.1
 ## Scales every particle count.
 const QUALITY := 1.0
-## Particle sizes in tiles (speeds always scale by a whole tile). Below 1 so
-## a hundred buildings' worth of dust doesn't white the whole screen out.
-const DUST_SIZE := 0.55
+## Particle sizes in tiles (speeds always scale by a whole tile). Dust is
+## sized so a collapse disappears into its own cloud, without a hundred
+## buildings' worth of it whiting the whole screen out.
+const DUST_SIZE := 1.5
 const GLASS_SIZE := 0.3
 const DEBRIS_SIZE := 0.5
 ## Dust opacity (0..1): the ring and blast clouds, and the lingering haze.
@@ -108,6 +117,14 @@ const DUST_ALPHA := 0.6
 const HAZE_ALPHA := 0.4
 ## Share of the damaged buildings near the camera that smoke afterwards.
 const SMOKE_SHARE := 0.3
+## Seed shared by every building's and prop's shake: the same ground motion
+## arriving at each one when the wave gets there, instead of each jiggling on
+## its own.
+const GROUND_SEED := 1432
+## The rolling band of dust on the wave front: particles, and how long it
+## takes to fade once it has crossed the whole quarter (seconds).
+const WAVE_DUST := 900
+const WAVE_FADE := 1.2
 
 var tile := 26.926893
 var ground_y := -0.7273283
@@ -135,6 +152,9 @@ var _people := 0
 var _finished := 0
 var _t := -1.0                  # seconds since start(), -1 before
 var _epi := Vector3.ZERO
+var _reach := 0.0               # furthest building from the epicenter
+var _wave_dust: GPUParticles3D
+var _wave_pm: ParticleProcessMaterial
 
 
 func _init() -> void:
@@ -334,6 +354,9 @@ func start() -> void:
 		bq.break_off_parts = e.full
 		bq.ground_crack = e.crack
 		add_child(bq)
+		# one ground motion for the whole quarter: each building starts it when
+		# the wave arrives, so the shaking travels instead of buzzing at random
+		bq._noise.seed = GROUND_SEED
 		bq.started.connect(_on_started.bind(e))
 		bq.main_shock.connect(_on_main_shock.bind(e))
 		bq.part_broke.connect(_on_part_broke)
@@ -341,8 +364,50 @@ func start() -> void:
 		bq.finished.connect(func(_o: int) -> void: _finished += 1)
 		e.bq = bq
 		bq.trigger(e.outcome, e.delay)
+		_reach = maxf(_reach, _flat(e.box.get_center()).distance_to(_flat(_epi)) + maxf(e.box.size.x, e.box.size.z))
+	_start_wave_dust()
 	_t = 0.0
 	set_process(true)
+
+
+## A low band of dust kicked up along the wave front, rolling out from the
+## fault across the streets: from the wide shot this is what says "the ground
+## is moving". Its ring grows with the wave in _process().
+func _start_wave_dust() -> void:
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_RING
+	pm.emission_ring_axis = Vector3.UP
+	pm.emission_ring_radius = 0.01
+	pm.emission_ring_inner_radius = 0.0
+	pm.emission_ring_height = 0.02 * tile
+	pm.direction = Vector3.UP
+	pm.spread = 20.0
+	pm.initial_velocity_min = 0.05 * tile
+	pm.initial_velocity_max = 0.22 * tile
+	# pushed ahead of the front a little, then it just hangs and settles
+	pm.radial_velocity_min = 0.1 * tile
+	pm.radial_velocity_max = 0.45 * tile
+	pm.damping_min = 0.5 * tile
+	pm.damping_max = 0.8 * tile
+	pm.gravity = Vector3(0, -0.06, 0) * tile
+	pm.scale_max = 1.4 * tile
+	pm.scale_min = 0.7 * tile
+	pm.scale_curve = QuakeFX.curve([Vector2(0, 0.4), Vector2(0.25, 0.9), Vector2(1, 1.5)])
+	pm.angle_min = 0.0
+	pm.angle_max = 360.0
+	pm.angular_velocity_min = -4.0
+	pm.angular_velocity_max = 4.0
+	var col := Color(QuakeFX.DUST_COLOR.darkened(0.08), 0.5)
+	pm.color = col
+	pm.color_initial_ramp = QuakeFX.ramp([col.darkened(0.1), col.lightened(0.05)], [0.0, 1.0])
+	pm.color_ramp = QuakeFX.fade_ramp(0.5)
+	pm.lifetime_randomness = 0.4
+	var p := QuakeFX.emitter(_fx, Transform3D(Basis(), Vector3(_epi.x, ground_y + 0.03 * tile, _epi.z)),
+		QuakeFX.dust_mesh(), _q(WAVE_DUST), 2.6, pm, false, 0.0)
+	p.visibility_aabb = AABB(Vector3(-_reach - 4.0 * tile, -tile, -_reach - 4.0 * tile),
+		Vector3(_reach + 4.0 * tile, 2.0 * tile, _reach + 4.0 * tile) * 2.0)
+	_wave_dust = p
+	_wave_pm = pm
 
 
 ## True once every building has finished.
@@ -352,6 +417,18 @@ func is_done() -> bool:
 
 func _process(delta: float) -> void:
 	_t += delta
+	if _wave_pm != null and is_instance_valid(_wave_dust):
+		var front := _t * WAVE_TILES * tile
+		_wave_pm.emission_ring_radius = maxf(front, 0.01)
+		_wave_pm.emission_ring_inner_radius = maxf(0.0, front - 0.5 * tile)
+		var over := front - _reach
+		if over > 0.0:
+			# past the last building: thin out, then stop
+			_wave_dust.amount_ratio = clampf(1.0 - over / (WAVE_FADE * WAVE_TILES * tile), 0.0, 1.0)
+			if _wave_dust.amount_ratio <= 0.0:
+				_wave_dust.emitting = false
+				_wave_pm = null
+				get_tree().create_timer(3.0, false).timeout.connect(_wave_dust.queue_free)
 	for s in _props:
 		var n: Node3D = s.node
 		if not is_instance_valid(n):
@@ -362,7 +439,9 @@ func _process(delta: float) -> void:
 		var orig: Transform3D = s.orig
 		var lean_b := Basis().slerp(Basis((s.lean as Basis).get_rotation_quaternion()), clampf(lt / 1.5, 0.0, 1.0))
 		var env := clampf(lt / 0.4, 0.0, 1.0) * (1.0 - clampf((lt - SHAKE_TIME * 0.6) / (SHAKE_TIME * 0.4), 0.0, 1.0))
-		var sd: float = s.seed
+		# the same ground motion under every prop (it reached each one at its
+		# own `delay`), with only a little of the prop's own wobble on top
+		var sd: float = s.seed * 0.02
 		var f := 10.0
 		var rot := deg_to_rad(5.0 if s.tall else 2.0) * env
 		var sway := Basis.from_euler(Vector3(_noise.get_noise_2d(lt * f * 0.5, sd) * rot, 0.0,
@@ -394,7 +473,7 @@ func _on_main_shock(e: Dictionary) -> void:
 	var c := box.get_center()
 	var power := 0.5 if e.outcome == BuildingQuake.Outcome.UNDAMAGED else 1.0
 	_dust(Vector3(c.x, ground_y + 0.05 * tile, c.z), maxf(box.size.x, box.size.z) * 0.65,
-		_q(int((12 + 20 * power) * (1.0 if e.full else 0.5))), 0.5 + 0.3 * power, 3.5, 0.35, 0.9 + power, true)
+		_q(int((12 + 20 * power) * (1.0 if e.full else 0.5))), 0.5 + 0.3 * power, 3.5, 0.15, 0.9 + power, true)
 	if e.full:
 		for f in _faces(box):
 			var n: Vector3 = f[1]
@@ -403,8 +482,7 @@ func _on_main_shock(e: Dictionary) -> void:
 				Vector2(f[2] * 0.9, f[3] * 0.85), _q(int((14 + 30 * area) * power)), 1.0 + 1.2 * power)
 			_grow(g, GLASS_SIZE)
 	if e.outcome != BuildingQuake.Outcome.UNDAMAGED:
-		_grow(QuakeFX.debris(_fx, Vector3(c.x, box.end.y, c.z), Vector3.UP, _q(16 if e.full else 8), 1.5, 70,
-			[Color(0.75, 0.66, 0.55), Color(0.6, 0.58, 0.55), Color(0.4, 0.38, 0.36)], box.size.x * 0.4))
+		_wall_spill(e, _q(5 if e.full else 3))
 	if e.outcome == BuildingQuake.Outcome.DAMAGED:
 		_spawn_jumpers(e)
 		_smoke(e)
@@ -419,9 +497,10 @@ func _on_part_broke(chunk: RigidBody3D) -> void:
 	chunk.linear_velocity *= tile * 0.3
 	chunk.body_entered.connect(_on_chunk_hit.bind(chunk))
 	var h := tile * 0.25
-	_dust(chunk.global_position, h * 0.6, _q(10), 0.4, 2.5, 0.3, 0.6)
-	_grow(QuakeFX.debris(_fx, chunk.global_position, Vector3.UP, _q(12), 1.4, 45,
-		[Color(0.75, 0.66, 0.55), Color(0.55, 0.53, 0.5)], h * 0.5))
+	_dust(chunk.global_position, h * 0.6, _q(8), 0.4, 2.5, 0.1, 0.4)
+	# bits crumble off it and fall with it
+	_grow(QuakeFX.debris(_fx, chunk.global_position, Vector3.DOWN, _q(10), 0.4, 60,
+		[Color(0.75, 0.66, 0.55), Color(0.55, 0.53, 0.5)], h * 0.5, 3.0))
 
 
 func _on_chunk_hit(_other: Node, chunk: RigidBody3D) -> void:
@@ -432,11 +511,12 @@ func _on_chunk_hit(_other: Node, chunk: RigidBody3D) -> void:
 	chunk.set_meta("landed", true)
 	var p := chunk.global_position
 	p.y = ground_y + 0.05 * tile
-	_dust(p, 0.15 * tile, _q(12), 0.45, 3.0, 0.3, 1.0, true)
+	_dust(p, 0.15 * tile, _q(12), 0.45, 3.0, 0.12, 1.0, true)
 
 
-## A RAZED building pancakes: a blast of dust rolls out along the ground and
-## a column of it goes up while the floors come down.
+## A RAZED building pancakes: the floors drop into their own dust. A heavy
+## surge of it pours out along the street at ground level and the building
+## sinks into a cloud that swells round it (no column climbing into the sky).
 func _collapse_dust(e: Dictionary) -> void:
 	# BuildingQuake starts dropping the building about 1.3 s after the jolt
 	# (0.85 s when it has no pieces to break off first)
@@ -446,16 +526,23 @@ func _collapse_dust(e: Dictionary) -> void:
 	var box: AABB = e.box
 	var c := box.get_center()
 	var foot := maxf(box.size.x, box.size.z)
-	_dust(Vector3(c.x, ground_y + 0.05 * tile, c.z), foot * 0.55, _q(26 if e.full else 12),
-		0.9 + foot / tile * 0.25, 6.0, 0.5, 2.6, true)
-	var col := _dust(Vector3(c.x, ground_y + 0.2 * tile, c.z), foot * 0.45, _q(40 if e.full else 16),
-		0.8 + foot / tile * 0.2, 5.0, 1.6, 0.6, false, false, 0.0)
+	# the surge: fast and low along the ground, then it stops and hangs
+	var surge := _dust(Vector3(c.x, ground_y + 0.05 * tile, c.z), foot * 0.5, _q(26 if e.full else 12),
+		0.9 + foot / tile * 0.25, 6.0, 0.08, 2.4, true)
+	var spm := surge.process_material as ParticleProcessMaterial
+	spm.spread = 10.0
+	# the cloud the floors fall into: it fills the building's own volume and
+	# rises only a little above it as the air is pushed out
+	var col := _dust(Vector3(c.x, box.position.y + box.size.y * 0.35, c.z), foot * 0.45, _q(30 if e.full else 12),
+		0.9 + foot / tile * 0.25, 5.0, 0.25, 0.35, false, false, 0.0)
 	var pm := col.process_material as ParticleProcessMaterial
 	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
-	pm.emission_box_extents = Vector3(box.size.x * 0.5, 0.15 * tile, box.size.z * 0.5)
-	_grow(QuakeFX.debris(_fx, Vector3(c.x, ground_y + 0.15 * tile, c.z), Vector3.UP, _q(30 if e.full else 14), 2.2, 80,
-		[Color(0.75, 0.66, 0.55), Color(0.62, 0.6, 0.57), Color(0.45, 0.43, 0.4), Color(0.3, 0.29, 0.28)], foot * 0.4, 7.0))
-	await get_tree().create_timer(2.0, false).timeout
+	pm.emission_box_extents = Vector3(box.size.x * 0.55, box.size.y * 0.35, box.size.z * 0.55)
+	pm.gravity = Vector3(0, -0.04, 0) * tile
+	# broken brick sprayed out low across the street
+	_grow(QuakeFX.debris(_fx, Vector3(c.x, ground_y + 0.15 * tile, c.z), Vector3(0, 0.25, 0), _q(18 if e.full else 8), 0.9, 85,
+		[Color(0.75, 0.66, 0.55), Color(0.62, 0.6, 0.57), Color(0.45, 0.43, 0.4), Color(0.3, 0.29, 0.28)], foot * 0.45, 5.0))
+	await get_tree().create_timer(1.6, false).timeout
 	if is_instance_valid(col):
 		col.emitting = false
 
@@ -495,6 +582,27 @@ func _rubble(center: Vector3, size: Vector3) -> void:
 			r.scale = Vector3.ONE * tile * _rng.randf_range(0.6, 0.9)
 			r.global_position = Vector3(center.x + cos(ang) * dist, ground_y, center.z + sin(ang) * dist)
 			r.rotation.y = _rng.randf() * TAU
+
+
+## Bricks and plaster shaken loose off the top of the walls: they slide off
+## the facades and drop to the pavement in a trail of dust (`per_face` bits a
+## side). An earthquake shakes things down, it doesn't throw them up.
+func _wall_spill(e: Dictionary, per_face: int) -> void:
+	var box: AABB = e.box
+	for f in _faces(box):
+		var n: Vector3 = f[1]
+		var side := Vector3(n.z, 0, -n.x) * _rng.randf_range(-0.6, 0.6) * float(f[2])
+		var p: Vector3 = f[0] + side + n * 0.04 * tile
+		p.y = box.end.y - box.size.y * _rng.randf_range(0.05, 0.25)
+		_grow(QuakeFX.debris(_fx, p, n * 0.5 + Vector3.DOWN, per_face, 0.35, 30,
+			[Color(0.75, 0.66, 0.55), Color(0.6, 0.58, 0.55), Color(0.4, 0.38, 0.36)], float(f[2]) * 0.4, 3.5))
+		# the dust it drags down the wall
+		var d := _dust(p, 0.08 * tile, _q(3), 0.3, 2.2, 0.0, 0.05, false, true, 0.5)
+		var dpm := d.process_material as ParticleProcessMaterial
+		dpm.direction = Vector3.DOWN
+		dpm.initial_velocity_min = 0.1 * tile
+		dpm.initial_velocity_max = 0.3 * tile
+		dpm.gravity = Vector3(0, -0.15, 0) * tile
 
 
 ## A few DAMAGED buildings smoke thinly from where they broke (one in
@@ -592,24 +700,42 @@ func _on_landed(p: QuakePerson) -> void:
 ## speeds; `radius` and `pos` are in the city's units.
 func _dust(pos: Vector3, radius: float, amount: int, size: float, life: float, up: float, out: float,
 		ring := false, one_shot := true, explosive := 0.85, color := Color(QuakeFX.DUST_COLOR, DUST_ALPHA)) -> GPUParticles3D:
-	return _grow(QuakeFX.dust(_fx, pos, radius, amount, size, life, up, out, color, ring, one_shot, explosive), DUST_SIZE)
+	var p := _grow(QuakeFX.dust(_fx, pos, radius, amount, size, life, up, out, color, ring, one_shot, explosive), DUST_SIZE)
+	# heavy masonry dust, not wind: no swirling turbulence and barely any spin
+	# (from far away those two make a hundred puffs look like a tornado), and
+	# it sinks a little as it spreads instead of drifting up
+	var pm := p.process_material as ParticleProcessMaterial
+	pm.turbulence_enabled = false
+	pm.angular_velocity_min = -5.0
+	pm.angular_velocity_max = 5.0
+	pm.gravity = Vector3(0, -0.05, 0) * tile
+	if ring:
+		# rolls out along the street rather than puffing upward
+		pm.spread = 15.0
+	return p
 
 
 ## Scale a QuakeFX emitter up to the city: particles, speeds and gravity all
 ## grow by one tile, so they fly the same way, just bigger.
+##
+## The max of each range is scaled BEFORE its min. ParticleProcessMaterial
+## pushes max up to min whenever min is set above it, so scaling min first
+## (as this used to) left max = min * tile: every particle could fly ~27
+## times too fast and grow ~27 times too big. That was what flung rocks and
+## giant dust puffs all over the sky and made the quake look like a tornado.
 func _grow(p: GPUParticles3D, size_tiles := DEBRIS_SIZE) -> GPUParticles3D:
 	if p == null:
 		return p
 	var pm := p.process_material as ParticleProcessMaterial
 	var k := tile
-	pm.scale_min *= size_tiles * k
 	pm.scale_max *= size_tiles * k
-	pm.initial_velocity_min *= k
+	pm.scale_min *= size_tiles * k
 	pm.initial_velocity_max *= k
-	pm.radial_velocity_min *= k
+	pm.initial_velocity_min *= k
 	pm.radial_velocity_max *= k
-	pm.damping_min *= k
+	pm.radial_velocity_min *= k
 	pm.damping_max *= k
+	pm.damping_min *= k
 	pm.gravity *= k
 	pm.turbulence_noise_scale *= k
 	p.collision_base_size *= k

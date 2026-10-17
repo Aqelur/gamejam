@@ -50,6 +50,9 @@ extends Node3D
 ##                     (day_cycle.gd; null in the editor)
 ##   ending_after_day  the earthquake ending plays after this day's evening;
 ##                     test_ending plays it straight away
+##   Money at 0        the day ends at once and the walkout plays instead of
+##                     the next morning (day_cycle.gd _play_walkout,
+##                     walkout.gd); test_walkout plays it straight away
 ##   show_stat_hints() light a crystal over each gauge a choice would change
 ##
 ## Real proposals live in PresidentRoom/proposals/*.tres (proposal_data.gd).
@@ -157,6 +160,11 @@ enum Stat { AWARENESS, MONEY, INFRASTRUCTURE, BUREAUCRACY }
 ## starts, as if the proposals in test_approved had been approved (stats as
 ## set above). Turn off for the real game.
 @export var test_ending := false
+## Testing: skip the desk and play the walkout (what happens when Money hits
+## 0) as soon as the scene starts, with the proposals in test_approved
+## approved, e.g. "health_hospital", "agency_fire_station", "interior_police"
+## to see those three shut. Turn off for the real game.
+@export var test_walkout := false
 ## Proposal ids treated as approved by test_ending, e.g.
 ## "urban_timber_bracing" (Old Quarter braced), "interior_inspectors",
 ## "seismologist_drill", "agency_rescue_training", "agency_fire_station",
@@ -350,6 +358,9 @@ func _rebuild() -> void:
 	dc.setup(self)
 	dc.day_started.connect(_on_day_started)
 	day_cycle = dc
+	if test_walkout:
+		dc.start_walkout_now.call_deferred(test_approved)
+		return
 	if test_ending:
 		dc.start_ending_now.call_deferred(test_approved)
 		return

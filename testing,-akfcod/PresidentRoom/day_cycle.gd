@@ -80,6 +80,16 @@ extends Node
 ## Contractor's cracked one, the cracks tear wider and it holds if
 ## Infrastructure is 50 or more, and below that it comes down into rubble.
 ## room.test_ending skips the desk and plays it straight away.
+##
+## THE WALKOUT. If a stamp leaves Money at 0 the day ends there and then (the
+## rest of its papers are dropped). Its evening plays as usual, but there is
+## no next morning and no earthquake: nobody has been paid in months, and
+## the town's emergency workers walk out (_play_walkout, walkout.gd). Every
+## service that was built (hospital, fire station, police station) goes dark
+## and gets a CLOSED sign on its door, then the president's state car slips
+## out of the palace alone and quietly leaves town along the back street.
+## Then a card on black with what happened and a tip, and a click starts the
+## game again. room.test_walkout skips the desk and plays it straight away.
 
 signal day_started(day: int)
 signal day_ended(day: int)
@@ -99,6 +109,8 @@ const PoliceRescue := preload("res://PresidentRoom/police_rescue.gd")
 const RoomQuake := preload("res://PresidentRoom/room_quake.gd")
 const HospitalQuake := preload("res://PresidentRoom/hospital_quake.gd")
 const EarthquakeEnding := preload("res://PresidentRoom/earthquake_ending.gd")
+const RainStorm := preload("res://PresidentRoom/rain_storm.gd")
+const Walkout := preload("res://PresidentRoom/walkout.gd")
 const PROPOSALS_DIR := "res://PresidentRoom/proposals"
 const CITY_SCENE := "res://City/city.tscn"
 const FONT_BOLD := "res://PresidentRoom/fonts/Montserrat-Bold.ttf"
@@ -151,6 +163,10 @@ var _old_quarter = null   # old_quarter_works.gd, made the first time it's neede
 var _drill = null   # central_park_drill.gd while it is up
 var _training = null   # fire_training.gd while it is up
 var _ending: EarthquakeEnding = null   # while the ending plays
+var _rain: RainStorm = null   # rain_storm.gd: rain and thunder over the ending
+var _walkout = null   # walkout.gd while it plays
+## Money hit 0: the day ends now and the walkout replaces the next morning.
+var bankrupt := false
 var _oq_quake = null   # old_quarter_quake.gd once it has played (the rescue needs its rubble)
 ## Left-click while an evening event is on screen skips to the next one.
 ## _watching: an event (or the opening bird's-eye shot) is playing and can be
@@ -373,7 +389,9 @@ func on_stamped(approved: bool) -> bool:
 		_today.append({"data": current, "approved": approved})
 		current = null
 	_decided += 1
-	return _decided >= _day_length
+	if room.get_stat(1) <= 0.0:
+		bankrupt = true   # nobody can be paid: no more papers today
+	return bankrupt or _decided >= _day_length
 
 
 ## Put the proposal `id` that was just unlocked on the desk next. It takes the
@@ -488,6 +506,9 @@ func end_day() -> void:
 		await _wait(2.5)
 		_watch(false)
 
+	if bankrupt:
+		await _play_walkout()
+		return
 	if room.ending_after_day > 0 and day >= room.ending_after_day:
 		await _play_ending()
 		return
@@ -574,6 +595,25 @@ func start_ending_now(approved_ids: Array) -> void:
 	if busy:
 		return
 	busy = true
+	if await _skip_to_city(approved_ids):
+		await _play_ending()
+
+
+## Testing: skip the desk and play the walkout now, with Money at 0 and
+## `approved_ids` approved (president_room.gd test_walkout / test_approved).
+func start_walkout_now(approved_ids: Array) -> void:
+	if busy:
+		return
+	busy = true
+	room.set_stat(1, 0.0, false)
+	bankrupt = true
+	if await _skip_to_city(approved_ids):
+		await _play_walkout()
+
+
+## For the test shortcuts: straight to the city on black, with what earlier
+## evenings would have done to it for `approved_ids`. False if there's no city.
+func _skip_to_city(approved_ids: Array) -> bool:
 	room.lock_camera(true)
 	for id in approved_ids:
 		_approved[String(id)] = true
@@ -583,7 +623,7 @@ func start_ending_now(approved_ids: Array) -> void:
 		_fade.color = Color(0, 0, 0, 0)
 		room.lock_camera(false)
 		busy = false
-		return
+		return false
 	_show_city(true)
 	# what earlier evenings would have done to the city
 	if _approved.has(OldQuarterQuake.BRACING_ID):
@@ -630,7 +670,7 @@ func start_ending_now(approved_ids: Array) -> void:
 			park.add_child(camp)
 			camp.setup(park)
 			camp.finish()   # already standing, as if put up on an earlier evening
-	await _play_ending()
+	return true
 
 
 ## What the player did, for earthquake_ending.gd.
@@ -664,6 +704,11 @@ func _play_ending() -> void:
 		await _back_to_office()
 		return
 	_show_city(true)
+	# dark sky, rain and thunder for the whole ending (set while still black)
+	_rain = RainStorm.new()
+	_rain.name = "RainStorm"
+	_city.add_child(_rain)
+	_rain.setup(_city, _city_cam)
 
 	# 2. the time, on black
 	_day_label.text = "THE NEXT DAY\n14:32"
@@ -698,6 +743,97 @@ func _play_ending() -> void:
 	_kill(_orbit)
 	_ending.set_city(_city, _fade)
 	await _ending.show_summary()
+
+
+# ================================================================ the walkout
+
+## Money is gone. The morning after, every service that was built shuts its
+## doors, then the president's car slips out of town; a card on black says
+## what happened and what to learn from it. The game ends here: a click
+## starts the scene again. See walkout.gd.
+func _play_walkout() -> void:
+	_watch(false)
+	# 1. out to black, tonight's scenes cleared away
+	_fade.color = Color(0, 0, 0, _fade.color.a)
+	var t := create_tween()
+	t.tween_property(_fade, "color:a", 1.0, 0.8)
+	t.parallel().tween_property(_caption_box, "modulate:a", 0.0, 0.5)
+	_fade_out_evening(0.6)
+	await t.finished
+	_clear_evening()
+	_set_caption("")
+	_kicker.text = ""
+	if _ensure_city():
+		_show_city(true)
+		_walkout = Walkout.new()
+		_walkout.name = "Walkout"
+		_city.add_child(_walkout)
+		_walkout.setup(_city, _font_bold, _font_black)
+		await _walkout.settle_buildings()
+
+		# 2. the time, on black
+		_day_label.text = "THE NEXT MORNING"
+		_day_label.modulate.a = 0.0
+		_day_label.visible = true
+		var d := create_tween()
+		d.tween_property(_day_label, "modulate:a", 1.0, 0.6)
+		d.tween_interval(1.4)
+		d.tween_property(_day_label, "modulate:a", 0.0, 0.5)
+		await d.finished
+		_day_label.visible = false
+
+		# 3. each service that was built goes dark and shuts its doors
+		for place in _walkout.closed_places():
+			var shot: Array = _walkout.place_shot(place)
+			_kill(_orbit)
+			_city_cam.look_at_from_position(shot[0], shot[1], Vector3.UP)
+			_glide(shot[0], shot[1], 0.05, shot[2])
+			_kicker.text = _walkout.kicker(place)
+			_caption_box.modulate.a = 1.0
+			_show_kicker()
+			_fade_in(0.7)
+			_watch(true)
+			await _wait(1.4)
+			await _until_done(_walkout.close.bind(place))
+			await _wait(1.8)
+			_watch(false)
+			_walkout.close_now(place)
+			await _cut_to_black(0.5)
+
+		# 4. one car leaves the palace, alone, and quietly leaves town
+		if _walkout.prepare_car():
+			var start: Array = _walkout.car_shot()
+			_kill(_orbit)
+			_city_cam.look_at_from_position(start[0], start[1], Vector3.UP)
+			_kicker.text = _walkout.car_kicker()
+			_caption_box.modulate.a = 1.0
+			_show_kicker()
+			_fade_in(0.8)
+			_watch(true)
+			await _wait(1.2)
+			_walkout.drive(_city_cam)
+			while not _walkout.is_away() and not _skip:
+				await get_tree().process_frame
+			_watch(false)
+			var out := create_tween()
+			out.tween_property(_fade, "color:a", 1.0, 1.4)
+			out.parallel().tween_property(_caption_box, "modulate:a", 0.0, 1.0)
+			await out.finished
+			_walkout.stop_car()
+	else:
+		_walkout = Walkout.new()
+		_walkout.name = "Walkout"
+		add_child(_walkout)
+		_walkout.setup(null, _font_bold, _font_black)
+
+	# 5. what happened, and what to take from it; a click starts again
+	_kill(_orbit)
+	_kicker.text = ""
+	await _walkout.show_card(_ui)
+	_skip = false
+	await _narrate(Walkout.TEXT, null)
+	await _walkout.show_tip()
+	await _walkout.wait_restart()
 
 
 ## Fade in from black on the city camera, wherever it now is.
@@ -848,6 +984,8 @@ func _play_quake_room(ending: EarthquakeEnding) -> void:
 		return
 	rq.shattered.connect(func() -> void: ending.kick(0.35))
 	rq.crashed.connect(func() -> void: ending.kick(0.45))
+	if _rain:
+		_rain.set_indoors(true)   # inside the office: no drops, rain muffled
 
 	# 1. lunchtime at the desk
 	var calm: Array = rq.calm_shot()
@@ -889,6 +1027,8 @@ func _play_quake_room(ending: EarthquakeEnding) -> void:
 		_glide(after[0], after[1], 1.8, after[2])
 	else:
 		await _cut_to_black(0.5)
+		if _rain:
+			_rain.set_indoors(false)   # down on the street: out in the rain
 		var street: Array = rq.street_shot()
 		_kill(_orbit)
 		_city_cam.look_at_from_position(street[0], street[1], Vector3.UP)
@@ -901,6 +1041,8 @@ func _play_quake_room(ending: EarthquakeEnding) -> void:
 	await _narrate(line.replace("*", ""), null)
 	await get_tree().create_timer(1.5).timeout
 	await _cut_to_black(0.6)
+	if _rain:
+		_rain.set_indoors(false)
 	ending.end_place()
 	rq.queue_free()
 
