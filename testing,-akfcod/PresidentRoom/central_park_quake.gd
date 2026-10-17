@@ -46,9 +46,9 @@ const SAFE_UNDRILLED := 0.08
 const SAFE_UNDRILLED_AWARE := 0.3
 ## Share of the ones left out in the streets who die (aftershocks, falling
 ## glass and masonry).
-const STRANDED_DEATH := 0.012
+const STRANDED_DEATH := 0.03
 ## Share of everyone who dies from a night in the open with no shelter.
-const NIGHT_DEATH := 0.002
+const NIGHT_DEATH := 0.005
 ## Cracked paths, a split fountain basin, toppled lamps.
 const PARK_DAMAGE := 1.4e6
 

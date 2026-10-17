@@ -59,20 +59,20 @@ enum Mode { NONE, SOUND, HOLDS, COLLAPSES }
 ## Hurt people brought here from all over the city: a base number plus this
 ## many for every death in the places before (clamped).
 const INJURED_BASE := 420.0
-const INJURED_PER_DEAD := 1.4
+const INJURED_PER_DEAD := 2.0
 const INJURED_MIN := 250
 const INJURED_MAX := 6000
 ## Patients and staff inside the hospital at lunchtime.
 const INSIDE := 230
 ## Share of the injured who die: with nowhere to go, treated in a sound
 ## hospital, treated in a cracked one (wards closed, corridors full).
-const UNTREATED_DEATH := 0.17
+const UNTREATED_DEATH := 0.3
 const TREATED_DEATH := 0.025
-const CRACKED_DEATH := 0.045
+const CRACKED_DEATH := 0.07
 ## Share of the untreated deaths avoided by a fully aware population.
 const FIRST_AID_SAVES := 0.3
 ## Share of the people inside who die when it comes down.
-const INSIDE_DEATH := 0.72
+const INSIDE_DEATH := 0.85
 ## What the hospital is worth, and the share lost: shaken, cracked, gone.
 const HOSPITAL_VALUE := 120.0e6
 const SOUND_LOSS := 0.03

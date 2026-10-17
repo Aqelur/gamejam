@@ -73,9 +73,9 @@ const DAMAGE_SCORE := 0.25
 
 ## Indexed by BuildingQuake.Outcome: [AUTO, UNDAMAGED, DAMAGED, RAZED].
 ## Share of the people inside who die.
-const DEATH_RATE := [0.0, 0.01, 0.12, 0.92]
+const DEATH_RATE := [0.0, 0.01, 0.2, 0.95]
 ## Share of those deaths avoided by a fully aware population.
-const PREPARED_SAVES := [0.0, 0.7, 0.6, 0.12]
+const PREPARED_SAVES := [0.0, 0.7, 0.5, 0.08]
 ## Share of those deaths avoided by trained rescue crews.
 const RESCUE_SAVES := [0.0, 0.0, 0.25, 0.1]
 ## Share of the people caught who are still alive under the rubble (the rest

@@ -72,16 +72,19 @@ const MIN_RESIDENTS := 6
 const MAX_RESIDENTS := 160
 const VALUE_PER_RESIDENT := 50000.0
 ## Share of the people inside who die if nobody comes: where the gas went up
-## (stairs cut off at once), and where the fire spread to (a little warning,
-## but the smoke fills the stairwells long before the flames arrive).
-const DEATH_RATE_FIRST := 0.55
-const DEATH_RATE_SPREAD := 0.38
-## Share of those deaths avoided by a fully aware population.
-const PREPARED_SAVES := 0.45
+## (blast plus stairs cut off at once: almost nobody), and where the fire
+## spread to (old timber row, packed at lunchtime, smoke fills the stairwells
+## long before the flames arrive and there are no ladders to reach the upper
+## floors). A gutted building with no fire service leaves few survivors.
+const DEATH_RATE_FIRST := 0.95
+const DEATH_RATE_SPREAD := 0.88
+## Share of those deaths avoided by a fully aware population (knowing to get
+## low and out helps a little, but not when the only stairwell is burning).
+const PREPARED_SAVES := 0.15
 const DRILL_BONUS := 0.25
 ## Share of the deaths avoided by fire crews pulling people out.
-const CREW_SAVES := 0.75
-const TRAINED_SAVES := 0.86
+const CREW_SAVES := 0.6
+const TRAINED_SAVES := 0.75
 ## Share of a building's value lost: burned out, or put out by the crews.
 const BURN_LOSS := 0.95
 const CREW_LOSS := 0.4
