@@ -7,14 +7,17 @@ Bu belge, yarışma kuralları gereği projede kullanılan tüm hazır kaynaklar
 *(Kural 3.4 gereği: Oyun içinde kullanılan her türlü hazır görsel, ses, model, animasyon, font veya kod kütüphanesi burada belirtilmelidir. Hiç hazır kaynak kullanmadıysanız bu bölümün altına "Projede hiçbir hazır kaynak kullanılmamıştır." yazınız.)*
 ses v muzik icin pixabay.com
 oyun asset olarak kenney.nl den city kit (commercial)
+logolar flaticondan alindi ve geminiden cevirttirildi
 
 
 
 
  2. Yapay Zeka (AI) Kullanımı
 *(Kural 4.2 gereği: Geliştirme sürecinde kullanılan tüm yapay zeka araçları (kod yazımı, görsel/ses üretimi, fikir alma vb.) burada belirtilmelidir. Hiç AI kullanmadıysanız bu bölümün altına "Projede hiçbir yapay zeka aracı kullanılmamıştır." yazınız.)*
-Cursor
-Claude Opus 5.5
+Cursor - Grok 4.6 ve Claude Opus 5.5 ile kodlama, senaryo uretimi , animasyonlar, gorsel uretim 
+
+gemini ile logonun gorundugu video yapildi
+
 
 
 
