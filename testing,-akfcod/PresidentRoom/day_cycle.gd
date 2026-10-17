@@ -6,8 +6,14 @@ extends Node
 ## A day is `room.proposals_per_day` proposals (4). The real proposals in
 ## PresidentRoom/proposals/*.tres (proposal_data.gd) are dealt first: every
 ## `start` one that hasn't been on the desk yet, plus any that an earlier
-## choice unlocked. The rest of the day is filled with the old placeholder
-## papers. Stamping a real proposal changes the four stats on the plaque.
+## choice unlocked. They come in a random order every game (the `first` one
+## still opens it), but the ones that change the city (a caption, action,
+## cutscene or city_target) are guaranteed a slot before the ending: each day
+## keeps enough room for them and the stat-only proposals only get the spare
+## slots. Proposals another one `requires` are dealt as early as possible so
+## the follow-up still gets a day. The rest of the day is filled with the old
+## placeholder papers. Stamping a real proposal changes the four stats on the
+## plaque.
 ##
 ## When the last proposal of the day is stamped the president turns to the
 ## window on the left, the view pushes into the glass, and after a white
@@ -227,11 +233,37 @@ func _load_catalog() -> void:
 		var r := load(PROPOSALS_DIR + "/" + file)
 		if r and r.get_script() == ProposalData and r.id != "":
 			_catalog.append(r)
-	# the `first` proposal opens the game, the rest go by id
-	_catalog.sort_custom(func(a: Resource, b: Resource) -> bool:
-		if a.first != b.first:
-			return a.first
-		return a.id < b.id)
+	# a new order every game; the `first` proposal still opens it
+	_catalog.shuffle()
+	var firsts: Array[Resource] = []
+	for p in _catalog:
+		if p.first:
+			firsts.append(p)
+	for p in firsts:
+		_catalog.erase(p)
+	for i in range(firsts.size() - 1, -1, -1):
+		_catalog.push_front(firsts[i])
+
+
+## True when a proposal shows something in the city at the end of the day (a
+## caption, a city action, a cutscene or a city_target). The rest only move
+## the stats.
+static func _changes_city(p: Resource) -> bool:
+	if p.city_target != "":
+		return true
+	for approved in [true, false]:
+		if int(p.action(approved)) != 0 or int(p.cutscene(approved)) != 0 \
+				or p.caption(approved) != "":
+			return true
+	return false
+
+
+## True when a proposal that is still to come `requires` this one.
+func _is_required(p: Resource) -> bool:
+	for q in _catalog:
+		if q.requires == p.id and not _used.has(q.id):
+			return true
+	return false
 
 
 ## Put together today's papers.
@@ -241,15 +273,71 @@ func _deal() -> void:
 	_decided = 0
 	var n: int = maxi(1, room.proposals_per_day)
 	_day_length = n
+
+	var city_now: Array[Resource] = []   # city-changing, can turn up today
+	var stats_now: Array[Resource] = []  # stat-only, can turn up today
+	var city_left := 0                   # city-changing still to come, today or later
 	for p in _catalog:
+		if _used.has(p.id) or not (p.start or _unlocked.has(p.id)):
+			continue
+		var ready: bool = p.requires == "" or _approved.has(p.requires)
+		# e.g. no fire station yet, no fire crew training; it can still come
+		# later as long as the fire station hasn't been turned down
+		var possible: bool = ready or not _used.has(p.requires)
+		var city := _changes_city(p)
+		if city and possible:
+			city_left += 1
+		if not ready:
+			continue
+		if city:
+			city_now.append(p)
+		else:
+			stats_now.append(p)
+
+	# the opening proposal first, then the ones a later proposal needs
+	var front: Array[Resource] = []
+	for p in city_now:
+		if p.first or _is_required(p):
+			front.append(p)
+	for p in front:
+		city_now.erase(p)
+	front.sort_custom(func(a: Resource, b: Resource) -> bool: return a.first and not b.first)
+	front.append_array(city_now)
+	city_now = front
+
+	# leave enough slots on the remaining days for every city-changing proposal
+	var days_left: int
+	if room.ending_after_day > 0:
+		days_left = maxi(1, room.ending_after_day - day + 1)
+	else:
+		days_left = maxi(1, ceili(float(city_left + stats_now.size()) / n))
+	var spare: int = maxi(0, days_left * n - city_left)
+	var stat_slots: int = clampi(ceili(float(spare) / days_left), 0, n)
+
+	for p in city_now:
+		if _deck.size() >= n - stat_slots:
+			break
+		_deck.append(p)
+	for p in stats_now:
 		if _deck.size() >= n:
 			break
-		if _used.has(p.id):
-			continue
-		if p.requires != "" and not _approved.has(p.requires):
-			continue   # e.g. no fire station yet, no fire crew training
-		if p.start or _unlocked.has(p.id):
+		_deck.append(p)
+	for p in city_now:   # stat-only ran out: fill up with more city ones
+		if _deck.size() >= n:
+			break
+		if not _deck.has(p):
 			_deck.append(p)
+
+	# mix today's papers, the opening proposal stays on top
+	var opener: Resource = null
+	for p in _deck:
+		if p.first:
+			opener = p
+	if opener:
+		_deck.erase(opener)
+	_deck.shuffle()
+	if opener:
+		_deck.push_front(opener)
 	while _deck.size() < n:
 		_deck.append(null)
 
