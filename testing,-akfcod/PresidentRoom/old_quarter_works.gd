@@ -13,6 +13,8 @@ extends Node3D
 ##            cleared, broken street lights stand back up and dead trees grow
 ##            green again. Afterwards the buildings count as sound for the
 ##            earthquake (structural_integrity) and are weathered like Downtown.
+##            In the earthquake ending (old_quarter_quake.gd) that is the
+##            difference between the quarter standing and crumbling to dust.
 ##   NEGLECT  nobody comes. Street-level view down the empty main street while
 ##            dust blows along and a couple of tumbleweeds roll past.
 
@@ -172,6 +174,31 @@ func repair() -> void:
 						_after(at, _swap_prop.bind(n, SWAPS[prefix]))
 						break
 	await get_tree().create_timer(LEAD_IN + WAVE_TIME + POP_TIME + 0.2).timeout
+	_settle()
+
+
+## The whole repair at once, no builders and no wave: every building rights
+## itself and is cleaned (over POP_TIME), the clutter goes, the broken lamps
+## and dead trees are replaced. For testing the earthquake ending straight
+## away with the bracing already approved (day_cycle.gd start_ending_now).
+func repair_now() -> void:
+	if repaired:
+		return
+	repaired = true
+	for i in _buildings.size():
+		_fix_building(i)
+	if _props:
+		for p in _props.get_children():
+			var n := p as Node3D
+			if n == null:
+				continue
+			if _starts_with_any(n.name, CLUTTER):
+				n.queue_free()
+				continue
+			for prefix in SWAPS:
+				if String(n.name).begins_with(prefix):
+					_swap_prop(n, SWAPS[prefix])
+					break
 	_settle()
 
 

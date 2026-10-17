@@ -48,6 +48,14 @@ extends Node
 ## Central Park's east lawn (park_tents.gd): evacuation signs spring up at
 ## every park gate and rows of tents pop up around an EMERGENCY SHELTER gate
 ## while the caption is read aloud; they stay for the rest of the game.
+##
+## THE ENDING. After the evening of day `room.ending_after_day` there is no
+## next morning: the screen goes black, "14:32", and the big earthquake hits
+## (_play_ending, earthquake_ending.gd). The ending cuts between places in the
+## city at the same moment, clock ticking, each one showing what the player's
+## choices did there and adding up the dead and the damage; then a summary
+## card on black. Places so far: the Old Quarter (old_quarter_quake.gd).
+## room.test_ending skips the desk and plays it straight away.
 
 signal day_started(day: int)
 signal day_ended(day: int)
@@ -60,6 +68,8 @@ const CentralParkDrill := preload("res://PresidentRoom/central_park_drill.gd")
 const HospitalCracks := preload("res://PresidentRoom/hospital_cracks.gd")
 const FireTraining := preload("res://PresidentRoom/fire_training.gd")
 const ParkTents := preload("res://PresidentRoom/park_tents.gd")
+const OldQuarterQuake := preload("res://PresidentRoom/old_quarter_quake.gd")
+const EarthquakeEnding := preload("res://PresidentRoom/earthquake_ending.gd")
 const PROPOSALS_DIR := "res://PresidentRoom/proposals"
 const CITY_SCENE := "res://City/city.tscn"
 const FONT_BOLD := "res://PresidentRoom/fonts/Montserrat-Bold.ttf"
@@ -111,6 +121,7 @@ var _concert = null   # beach_concert.gd while it is up
 var _old_quarter = null   # old_quarter_works.gd, made the first time it's needed
 var _drill = null   # central_park_drill.gd while it is up
 var _training = null   # fire_training.gd while it is up
+var _ending: EarthquakeEnding = null   # while the ending plays
 ## Left-click while an evening event is on screen skips to the next one.
 ## _watching: an event (or the opening bird's-eye shot) is playing and can be
 ## skipped. _skip: the player clicked; every wait in the event returns at once
@@ -365,6 +376,9 @@ func end_day() -> void:
 		await _wait(2.5)
 		_watch(false)
 
+	if room.ending_after_day > 0 and day >= room.ending_after_day:
+		await _play_ending()
+		return
 	await _back_to_office()
 
 
@@ -393,25 +407,9 @@ func _back_to_office() -> void:
 	var t := create_tween()
 	t.tween_property(_fade, "color:a", 1.0, 0.5)
 	t.parallel().tween_property(_caption_box, "modulate:a", 0.0, 0.4)
-	if _concert:
-		_concert.fade_out(0.5)
-	if _drill:
-		_drill.fade_out(0.5)
-	if _training:
-		_training.fade_out(0.5)
+	_fade_out_evening(0.5)
 	await t.finished
-	if _drill:
-		_drill.close()   # everyone goes home
-		_drill = null
-	if _training:
-		_training.close()   # hoses rolled up, crews back inside
-		_training = null
-	if _concert:
-		_concert.close()   # the stage comes down overnight
-		_concert = null
-	if _old_quarter:
-		_old_quarter.clear_transients()   # builders go home, tumbleweeds gone
-	_kill(_orbit)
+	_clear_evening()
 	if _city:
 		_show_city(false)
 	room.lock_camera(false)
@@ -429,6 +427,198 @@ func _back_to_office() -> void:
 	_day_label.visible = false
 	busy = false
 	day_started.emit(day)
+
+
+func _fade_out_evening(time: float) -> void:
+	if _concert:
+		_concert.fade_out(time)
+	if _drill:
+		_drill.fade_out(time)
+	if _training:
+		_training.fade_out(time)
+
+
+## Tonight's one-off scenes go away; what was built stays.
+func _clear_evening() -> void:
+	if _drill:
+		_drill.close()   # everyone goes home
+		_drill = null
+	if _training:
+		_training.close()   # hoses rolled up, crews back inside
+		_training = null
+	if _concert:
+		_concert.close()   # the stage comes down overnight
+		_concert = null
+	if _old_quarter:
+		_old_quarter.clear_transients()   # builders go home, tumbleweeds gone
+	_kill(_orbit)
+
+
+# ================================================================ the ending
+
+## Testing: skip the desk and play the ending now, as if `approved_ids` had
+## been approved (president_room.gd test_ending / test_approved).
+func start_ending_now(approved_ids: Array) -> void:
+	if busy:
+		return
+	busy = true
+	room.lock_camera(true)
+	for id in approved_ids:
+		_approved[String(id)] = true
+		_used[String(id)] = true
+	_fade.color = Color(0, 0, 0, 1)
+	if not _ensure_city():
+		_fade.color = Color(0, 0, 0, 0)
+		room.lock_camera(false)
+		busy = false
+		return
+	_show_city(true)
+	# what earlier evenings would have done to the city
+	if _approved.has(OldQuarterQuake.BRACING_ID):
+		var q = _ensure_old_quarter()
+		if q and not q.repaired:
+			q.repair_now()
+			await get_tree().create_timer(OldQuarterWorks.POP_TIME + 0.3).timeout
+	await _play_ending()
+
+
+## What the player did, for earthquake_ending.gd.
+func _ending_choices() -> Dictionary:
+	return {
+		"approved": _approved.duplicate(),
+		"awareness": room.get_stat(0),
+		"money": room.get_stat(1),
+		"infrastructure": room.get_stat(2),
+		"bureaucracy": room.get_stat(3),
+	}
+
+
+## The big one. Black screen, the time, then the quake seen in one place after
+## another (same moment, the clock rewinding each time), each with its toll,
+## then everything added up. The game ends here: the summary waits for a click
+## and starts the scene again.
+func _play_ending() -> void:
+	_watch(false)
+	# 1. out to black, tonight's scenes cleared away
+	_fade.color = Color(0, 0, 0, _fade.color.a)
+	var t := create_tween()
+	t.tween_property(_fade, "color:a", 1.0, 0.8)
+	t.parallel().tween_property(_caption_box, "modulate:a", 0.0, 0.5)
+	_fade_out_evening(0.6)
+	await t.finished
+	_clear_evening()
+	_set_caption("")
+	_kicker.text = ""
+	if not _ensure_city():
+		await _back_to_office()
+		return
+	_show_city(true)
+
+	# 2. the time, on black
+	_day_label.text = "THE NEXT DAY\n14:32"
+	_day_label.modulate.a = 0.0
+	_day_label.visible = true
+	var d := create_tween()
+	d.tween_property(_day_label, "modulate:a", 1.0, 0.6)
+	d.tween_interval(1.6)
+	d.tween_property(_day_label, "modulate:a", 0.0, 0.5)
+	await d.finished
+	_day_label.visible = false
+
+	_ending = EarthquakeEnding.new()
+	_ending.name = "EarthquakeEnding"
+	add_child(_ending)
+	var tile := 26.926893
+	var q = _ensure_old_quarter()
+	if q:
+		tile = q._tile
+	_ending.setup(_ending_choices(), _ui, _kicker, _city_cam, tile, _font_bold, _font_black)
+
+	# 3. one place after another, all at the same moment. Each takes the
+	# ending, shows its place and adds its toll. Add the next places here.
+	var places: Array[Callable] = [_play_quake_old_quarter]
+	for play in places:
+		await play.call(_ending)
+
+	# 4. everything added up; a click starts the game again
+	_kill(_orbit)
+	await _ending.show_summary()
+
+
+## Fade in from black on the city camera, wherever it now is.
+func _fade_in(time := 0.6) -> void:
+	var t := create_tween()
+	t.tween_property(_fade, "color:a", 0.0, time).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+
+
+## Cut to black between places.
+func _cut_to_black(time := 0.5) -> void:
+	var t := create_tween()
+	t.tween_property(_fade, "color:a", 1.0, time)
+	t.parallel().tween_property(_caption_box, "modulate:a", 0.0, time * 0.8)
+	await t.finished
+
+
+## The Old Quarter: down in its main street at lunchtime, then the ground goes.
+## The camera rises over the quarter while every building does what the
+## player's choices made of it (old_quarter_quake.gd): unbraced, it crumbles
+## to dust with nearly everyone inside; braced, it shakes and mostly stands.
+## Then the toll counts up on screen.
+func _play_quake_old_quarter(ending: EarthquakeEnding) -> void:
+	var works = _ensure_old_quarter()
+	var oq = OldQuarterQuake.new()
+	oq.name = "OldQuarterQuake"
+	_city.add_child(oq)
+	if works == null or not oq.setup(_city, works, ending):
+		push_warning("DayCycle: no Old Quarter in %s, skipping it in the ending" % CITY_SCENE)
+		oq.queue_free()
+		return
+
+	# 1. a calm street
+	var low: Array = works.street_shot()
+	_kill(_orbit)
+	_city_cam.look_at_from_position(low[0], low[1], Vector3.UP)
+	_glide(low[0], low[1], 0.05, low[2])
+	ending.begin_place("Old Quarter", 0.0)
+	_caption_box.modulate.a = 1.0
+	_show_kicker()
+	_fade_in(0.8)
+	await get_tree().create_timer(0.6).timeout
+	var intro: String = oq.intro_line()
+	_type_caption(intro)
+	ending.rumble(0.08, 3.0)   # a faint tremor first
+	await _narrate(intro.replace("*", ""), null)
+
+	# 2. the ground goes: the camera pulls up and back over the whole quarter
+	await _hide_caption()
+	ending.kick(0.8)
+	ending.rumble(1.0, OldQuarterQuake.SHAKE_TIME)
+	oq.start()
+	await get_tree().create_timer(1.0).timeout
+	var wide: Array = works.district_shot()
+	_glide(wide[0], wide[1], 3.2, wide[2])
+	var crash := 0.0
+	var left: float = oq.settle_time() - 1.0
+	while left > 0.0 and not oq.is_done():
+		await get_tree().process_frame
+		var dt := get_process_delta_time()
+		left -= dt
+		crash -= dt
+		if crash <= 0.0 and oq.razed > 0:
+			ending.kick(randf_range(0.15, 0.35) * (0.4 + oq.razed_share()))
+			crash = randf_range(0.35, 0.9)
+
+	# 3. the dust settles: what happened, and what it cost
+	var line: String = oq.headline()
+	_type_caption(line)
+	var r: Dictionary = oq.result()
+	ending.add_result(r)
+	ending.show_tally(r)
+	await _narrate(line.replace("*", ""), null)
+	await get_tree().create_timer(1.5).timeout
+	ending.hide_tally()
+	await _cut_to_black(0.6)
+	ending.end_place()
 
 
 # ================================================================ concert

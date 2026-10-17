@@ -48,6 +48,8 @@ extends Node3D
 ##                     (Stat.AWARENESS, MONEY, INFRASTRUCTURE, BUREAUCRACY; 0..100)
 ##   day_cycle         days, real proposals and the end-of-day city view
 ##                     (day_cycle.gd; null in the editor)
+##   ending_after_day  the earthquake ending plays after this day's evening;
+##                     test_ending plays it straight away
 ##   show_stat_hints() light a crystal over each gauge a choice would change
 ##
 ## Real proposals live in PresidentRoom/proposals/*.tres (proposal_data.gd).
@@ -146,6 +148,19 @@ enum Stat { AWARENESS, MONEY, INFRASTRUCTURE, BUREAUCRACY }
 @export_group("Days")
 ## Proposals stamped before the day ends and the city is shown.
 @export_range(1, 20) var proposals_per_day := 4
+
+@export_group("Ending")
+## The earthquake ending plays after the evening of this day (0 = never).
+## See day_cycle.gd _play_ending and earthquake_ending.gd.
+@export_range(0, 30) var ending_after_day := 3
+## Testing: skip the desk and play the earthquake ending as soon as the scene
+## starts, as if the proposals in test_approved had been approved (stats as
+## set above). Turn off for the real game.
+@export var test_ending := false
+## Proposal ids treated as approved by test_ending, e.g.
+## "urban_timber_bracing" (Old Quarter braced), "interior_inspectors",
+## "seismologist_drill", "agency_rescue_training". Empty = everything denied.
+@export var test_approved: Array[String] = ["urban_timber_bracing"]
 
 # ---------------------------------------------------------------- layout
 
@@ -334,6 +349,9 @@ func _rebuild() -> void:
 	dc.setup(self)
 	dc.day_started.connect(_on_day_started)
 	day_cycle = dc
+	if test_ending:
+		dc.start_ending_now.call_deferred(test_approved)
+		return
 	if visitors_enabled:
 		var t = (load("res://PresidentRoom/office_traffic.gd") as GDScript).new()
 		t.name = "Visitors"
