@@ -1,6 +1,23 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://d2vnx6tobxqov"]
 
-[ext_resource type="Script" path="res://PresidentRoom/president_room.gd" id="1_room"]
+[ext_resource type="Script" uid="uid://dqwnlsb4u37ji" path="res://PresidentRoom/president_room.gd" id="1_room"]
 
-[node name="PresidentRoom" type="Node3D"]
+[node name="PresidentRoom" type="Node3D" unique_id=1721111662]
 script = ExtResource("1_room")
+paper_title = "DIRECTIVE"
+proposal_texts = null
+base_pitch = -24.0
+fov = 62.0
+paper_closeup = null
+closeup_time = null
+closeup_pitch = null
+closeup_distance = null
+peoples_awareness = null
+money = null
+infrastructure = null
+bureaucracy = null
+show_stat_names = null
+visitors_enabled = null
+proposer_interval = null
+coffee_interval = null
+proposals_per_day = null

@@ -1,0 +1,25 @@
+[gd_resource type="Resource" format=3]
+
+[ext_resource type="Script" path="res://PresidentRoom/proposal_data.gd" id="1_data"]
+
+[resource]
+script = ExtResource("1_data")
+id = "health_hospital"
+character = "Minister of Health"
+start = true
+says = "Mayor, this city doesn't have a single hospital. When the quake hits, the injured will have nowhere to go. Give me the land and the budget."
+deny_label = "We can't afford it"
+deny_people = -10
+deny_money = 15
+deny_readiness = -10
+deny_caption = "You turned down the *Hospital*. The lot stays empty, and when the quake hits, the injured will have nowhere to go."
+approve_label = "Build it"
+approve_people = 5
+approve_money = -15
+approve_readiness = 10
+approve_bureaucracy = 5
+approve_unlocks = "contractor_hospital"
+approve_caption = "You have accepted the idea of a *Hospital*, and now our city has one."
+approve_action = 1
+city_target = "Districts/CivicCenter/Buildings/Hospital"
+note = "Şehirde hiç hastane yok. Reddetmek kasayı rahatlatır ama halkı ve hazırlığı sert düşürür. İnşaat izinleri bürokrasiyi biraz artırır. Onaylanınca contractor_hospital açılır (henüz yazılmadı)."

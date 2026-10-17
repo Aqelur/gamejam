@@ -44,11 +44,28 @@ extends Node3D
 ##   traffic           the visitor director (null in the editor or when visitors are off)
 ##   desk              the stamping logic, proposal_desk.gd (null in the editor)
 ##   set_door_open()   swing a door ("MainDoor" / "SideDoor") between 0 (shut) and 1 (open)
+##   set_stat() / get_stat()  the four gauges on the plaque under the paper
+##                     (Stat.AWARENESS, MONEY, INFRASTRUCTURE, BUREAUCRACY; 0..100)
+##   day_cycle         days, real proposals and the end-of-day city view
+##                     (day_cycle.gd; null in the editor)
+##   show_stat_hints() light a crystal over each gauge a choice would change
+##
+## Real proposals live in PresidentRoom/proposals/*.tres (proposal_data.gd).
+## While a stamp is held over one, a small crystal floats above each stat it
+## would change (not which way or by how much). Once the stamp lands, each
+## crystal turns into a green up / red down arrow and the liquid in the icon
+## sloshes to its new level, tinted green or red. After proposals_per_day stamps the day
+## ends: the view turns to the window on the left wall, pushes through it,
+## and shows the city from above, flying to whatever the day's choices
+## changed (see day_cycle.gd).
 
 ## A new proposal has slid onto the paper. number counts from 1.
 signal proposal_presented(number: int)
 ## The player stamped the proposal on the paper.
 signal proposal_stamped(number: int, approved: bool)
+
+## The four stats shown on the brass plaque under the paper.
+enum Stat { AWARENESS, MONEY, INFRASTRUCTURE, BUREAUCRACY }
 
 @export var use_own_environment := true:
 	set(v):
@@ -90,6 +107,31 @@ signal proposal_stamped(number: int, approved: bool)
 ## closer; 0.5 keeps both stamps fully in view on a 16:9 screen.
 @export var closeup_distance := 0.5
 
+@export_group("Stat gauges")
+## Each icon on the plaque under the paper fills from the bottom up to its
+## value (0..100). No numbers are shown.
+@export_range(0.0, 100.0, 1.0) var peoples_awareness := 50.0:
+	set(v):
+		peoples_awareness = clampf(v, 0.0, 100.0)
+		_show_stat(Stat.AWARENESS, _ease_stats)
+@export_range(0.0, 100.0, 1.0) var money := 50.0:
+	set(v):
+		money = clampf(v, 0.0, 100.0)
+		_show_stat(Stat.MONEY, _ease_stats)
+@export_range(0.0, 100.0, 1.0) var infrastructure := 50.0:
+	set(v):
+		infrastructure = clampf(v, 0.0, 100.0)
+		_show_stat(Stat.INFRASTRUCTURE, _ease_stats)
+@export_range(0.0, 100.0, 1.0) var bureaucracy := 50.0:
+	set(v):
+		bureaucracy = clampf(v, 0.0, 100.0)
+		_show_stat(Stat.BUREAUCRACY, _ease_stats)
+## Engraved names under the icons.
+@export var show_stat_names := true:
+	set(v):
+		show_stat_names = v
+		_queue_rebuild()
+
 @export_group("Visitors")
 ## Proposers and the coffee steward walk in (only while the game runs). When
 ## off, proposals simply appear on the paper one after another.
@@ -98,6 +140,10 @@ signal proposal_stamped(number: int, approved: bool)
 @export var proposer_interval := Vector2(2.0, 5.0)
 ## Seconds between coffee visits (random in this range).
 @export var coffee_interval := Vector2(35.0, 60.0)
+
+@export_group("Days")
+## Proposals stamped before the day ends and the city is shown.
+@export_range(1, 20) var proposals_per_day := 4
 
 # ---------------------------------------------------------------- layout
 
@@ -169,6 +215,9 @@ var paper_home := Vector3.ZERO
 var stamps: Array[Node3D] = []
 var traffic: Node3D
 var desk: Node3D
+var day_cycle: Node
+## True while something else (the end-of-day sequence) drives the camera.
+var camera_locked := false
 ## Proposals presented so far.
 var proposal_count := 0
 ## Door name -> {"leaves": [hinge Node3D], "signs": [+1/-1], "node": door Node3D, "amount": 0..1}
@@ -184,6 +233,19 @@ var _t := 0.0
 var _rebuild_queued := false
 var _focus := 0.0            # 0 seated view .. 1 paper close-up
 var _focus_target := 0.0
+var _gauge_mats: Array[ShaderMaterial] = []
+var _gauge_tweens: Array[Tween] = [null, null, null, null]
+var _ease_stats := false
+## One crystal per gauge, and how much each one is showing (0 hidden .. 1).
+var _hints: Array[Node3D] = []
+var _hint_on: Array[bool] = [false, false, false, false]
+var _hint_k: Array[float] = [0.0, 0.0, 0.0, 0.0]
+## Change feedback, one per gauge. Only started by set_stat() (i.e. after a
+## stamp lands), never while a stamp is merely held over the paper.
+var _arrows: Array[Node3D] = []
+var _arrow_halo_mats: Array[StandardMaterial3D] = []
+var _fx_age: Array[float] = [-1.0, -1.0, -1.0, -1.0]   # seconds since change, -1 idle
+var _fx_dir: Array[float] = [0.0, 0.0, 0.0, 0.0]       # +1 went up, -1 went down
 
 
 func _ready() -> void:
@@ -206,8 +268,15 @@ func _rebuild() -> void:
 	_fire_flames.clear()
 	doors.clear()
 	stamps.clear()
+	_gauge_mats.clear()
+	_hints.clear()
+	_arrows.clear()
+	_arrow_halo_mats.clear()
+	_fx_age = [-1.0, -1.0, -1.0, -1.0]
 	traffic = null
 	desk = null
+	day_cycle = null
+	camera_locked = false
 	# Built nodes get no owner, so they are never written into the .tscn.
 	_built = Node3D.new()
 	_built.name = "Built"
@@ -219,6 +288,7 @@ func _rebuild() -> void:
 	_build_ceiling()
 	_build_walls()
 	_build_windows()
+	_build_left_window()
 	_build_flags()
 	_build_front_door()
 	_build_bookcases()
@@ -231,6 +301,7 @@ func _rebuild() -> void:
 	_build_desk()
 	_build_desk_items()
 	_build_paper()
+	_build_stat_gauges()
 	_build_stamps()
 	_build_chair()
 	_build_lights()
@@ -243,7 +314,14 @@ func _rebuild() -> void:
 	_built.add_child(d)
 	d.setup(self)
 	d.stamped.connect(_on_stamped)
+	d.aim_changed.connect(_on_aim_changed)
 	desk = d
+	var dc = (load("res://PresidentRoom/day_cycle.gd") as GDScript).new()
+	dc.name = "DayCycle"
+	_built.add_child(dc)
+	dc.setup(self)
+	dc.day_started.connect(_on_day_started)
+	day_cycle = dc
 	if visitors_enabled:
 		var t = (load("res://PresidentRoom/office_traffic.gd") as GDScript).new()
 		t.name = "Visitors"
@@ -278,13 +356,18 @@ func set_paper_text(text: String, title := "") -> void:
 	paper_text = text
 
 
-## Put the next placeholder proposal on the paper and slide it in.
+## Put the next proposal on the paper and slide it in: a real one from
+## day_cycle.gd, or a placeholder from proposal_texts.
 func _next_proposal() -> void:
 	proposal_count += 1
-	var body := ""
-	if not proposal_texts.is_empty():
-		body = proposal_texts[(proposal_count - 1) % proposal_texts.size()]
-	set_paper_text(body, "PROPOSAL #%d" % proposal_count)
+	var p: Resource = day_cycle.next_proposal() if day_cycle else null
+	if p:
+		set_paper_text(p.paper_body(), "PROPOSAL #%d" % proposal_count)
+	else:
+		var body := ""
+		if not proposal_texts.is_empty():
+			body = proposal_texts[(proposal_count - 1) % proposal_texts.size()]
+		set_paper_text(body, "PROPOSAL #%d" % proposal_count)
 	desk.present()
 	focus_paper(true)
 	proposal_presented.emit(proposal_count)
@@ -292,13 +375,97 @@ func _next_proposal() -> void:
 
 func _on_stamped(approved: bool) -> void:
 	proposal_stamped.emit(proposal_count, approved)
+	show_stat_hints([])
+	var day_over: bool = day_cycle.on_stamped(approved) if day_cycle else false
 	# a moment to see the ink up close, then back to the chair (the paper
 	# leaves the desk as the view rises, see proposal_desk.gd)
-	get_tree().create_timer(0.6).timeout.connect(focus_paper.bind(false))
+	# (with visitors, the next paper of the day follows straight away, so the
+	# view stays over the desk)
+	if day_over or not traffic:
+		get_tree().create_timer(0.6).timeout.connect(focus_paper.bind(false))
 	if traffic:
-		traffic.proposal_decided(approved)
-	else:
+		traffic.proposal_decided(approved, not day_over)
+		if day_over:
+			traffic.set_paused(true)
+	elif not day_over:
 		get_tree().create_timer(1.8).timeout.connect(_next_proposal)
+	if day_over:
+		# let the proposer react and head for the door first
+		get_tree().create_timer(2.4).timeout.connect(day_cycle.end_day)
+
+
+## The stamp held over the paper changed: light up what that choice touches.
+func _on_aim_changed(choice: int) -> void:
+	if choice < 0 or day_cycle == null:
+		show_stat_hints([])
+	else:
+		show_stat_hints(day_cycle.effects_for(choice == 1))
+
+
+## A new day: proposals start coming in again.
+func _on_day_started(_day: int) -> void:
+	if traffic:
+		traffic.set_paused(false)
+	else:
+		get_tree().create_timer(0.8).timeout.connect(_next_proposal)
+
+
+## Light a crystal over every gauge whose change is not zero (in Stat order).
+## An empty array hides them all.
+func show_stat_hints(changes: Array) -> void:
+	for i in 4:
+		_hint_on[i] = i < changes.size() and int(changes[i]) != 0
+
+
+## Take the camera away from the chair (true) or give it back (false).
+func lock_camera(on: bool) -> void:
+	camera_locked = on
+	if desk:
+		desk.process_mode = Node.PROCESS_MODE_DISABLED if on else Node.PROCESS_MODE_INHERIT
+	if on:
+		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+		show_stat_hints([])
+	else:
+		_focus = 0.0
+		_focus_target = 0.0
+		if camera:
+			camera.fov = fov
+		reset_view()
+
+
+## Middle of the glass of the window on the left wall (global).
+func left_window_centre() -> Vector3:
+	return global_transform * Vector3(-W * 0.5 + 0.012, LEFT_WINDOW_SILL + LEFT_WINDOW_H * 0.5, LEFT_WINDOW_Z)
+
+
+## Direction the left window faces (into the room, global).
+func left_window_normal() -> Vector3:
+	return global_basis.x.normalized()
+
+
+## Set one of the four stats (0..100). The icon's fill eases to the new level
+## unless animate is false.
+func set_stat(stat: Stat, value: float, animate := true) -> void:
+	var change := value - get_stat(stat)
+	_ease_stats = animate
+	match stat:
+		Stat.AWARENESS: peoples_awareness = value
+		Stat.MONEY: money = value
+		Stat.INFRASTRUCTURE: infrastructure = value
+		Stat.BUREAUCRACY: bureaucracy = value
+	_ease_stats = false
+	if animate and not is_zero_approx(change):
+		_play_change_fx(stat, signf(change))
+
+
+func get_stat(stat: Stat) -> float:
+	match stat:
+		Stat.AWARENESS: return peoples_awareness
+		Stat.MONEY: return money
+		Stat.INFRASTRUCTURE: return infrastructure
+	return bureaucracy
 
 
 func reset_view() -> void:
@@ -332,7 +499,7 @@ func _paper_view() -> Transform3D:
 
 ## Place the camera between the seated look and the paper close-up.
 func _apply_camera() -> void:
-	if camera == null:
+	if camera == null or camera_locked:
 		return
 	var seated := Transform3D(Basis.from_euler(Vector3(deg_to_rad(_pitch), deg_to_rad(_yaw), 0.0)), EYE)
 	if _focus <= 0.0:
@@ -346,7 +513,7 @@ func _apply_camera() -> void:
 # ---------------------------------------------------------------- input
 
 func _unhandled_input(event: InputEvent) -> void:
-	if Engine.is_editor_hint() or not mouse_look or camera == null:
+	if Engine.is_editor_hint() or not mouse_look or camera == null or camera_locked:
 		return
 	# no looking around while the view is over the paper
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT:
@@ -362,12 +529,14 @@ func _unhandled_input(event: InputEvent) -> void:
 func _process(delta: float) -> void:
 	if Engine.is_editor_hint():
 		return
-	if camera and _focus != _focus_target:
+	if camera and _focus != _focus_target and not camera_locked:
 		_focus = move_toward(_focus, _focus_target, delta / maxf(closeup_time, 0.01))
 		_apply_camera()
+	_t += delta
+	_animate_hints(delta)
+	_animate_gauge_fx(delta)
 	if _fire_light == null:
 		return
-	_t += delta
 	var f := 0.5 + 0.5 * sin(_t * 9.0) * sin(_t * 3.7 + 1.3)
 	_fire_light.light_energy = 1.0 + 0.45 * f
 	for i in _fire_flames.size():
@@ -622,6 +791,12 @@ var _right: Node3D
 
 const WINDOW_XS := [-2.7, 0.0, 2.7]
 const WINDOW_W := 1.3
+## The window on the left wall, between the fireplace and the case clock.
+## The city is out there; the end of the day looks through it.
+const LEFT_WINDOW_Z := -1.5
+const LEFT_WINDOW_W := 1.15
+const LEFT_WINDOW_H := 2.1
+const LEFT_WINDOW_SILL := 1.0
 const BOOKCASE_XS := [-2.75, 2.75]
 const FIREPLACE_Z := -3.7
 const SIDE_DOOR_Z := -4.4
@@ -645,7 +820,8 @@ func _build_walls() -> void:
 		[Vector3(0.0, MAIN_DOOR_W * 0.5 + DOOR_REVEAL, MAIN_DOOR_H + DOOR_REVEAL)])
 	_back = wall("WallBack", W, Vector3(0, 0, Z_BACK), 180.0, back_gaps)
 	_left = wall("WallLeft", DEPTH, Vector3(-W * 0.5, 0, ZC), 90.0,
-		[Vector2(ZC - FIREPLACE_Z, 1.0), Vector2(ZC - 0.0, 0.35)])
+		[Vector2(ZC - FIREPLACE_Z, 1.0), Vector2(ZC - 0.0, 0.35),
+		Vector2(ZC - LEFT_WINDOW_Z, LEFT_WINDOW_W * 0.5 + 0.4)])
 	_right = wall("WallRight", DEPTH, Vector3(W * 0.5, 0, ZC), -90.0,
 		[Vector2(SIDE_DOOR_Z - ZC, 0.7), Vector2(-2.6 - ZC, 0.75)],
 		[Vector3(SIDE_DOOR_Z - ZC, SIDE_DOOR_W * 0.5 + DOOR_REVEAL, SIDE_DOOR_H + DOOR_REVEAL)])
@@ -654,36 +830,84 @@ func _build_walls() -> void:
 # ---------------------------------------------------------------- windows (behind the player)
 
 func _build_windows() -> void:
-	var sill_y := 1.0
-	var h := 2.1
-	var w: float = WINDOW_W
-	var glass := mat(SKY, 1.1, 0.1)
 	var hedge := mat(HEDGE, 0.5, 0.8)
-	var white := mat(TRIM, 0.0, 0.6)
 	for i in WINDOW_XS.size():
-		var lx: float = WINDOW_XS[i]
-		var g := group(_back, "Window%d" % i, Vector3(lx, 0, 0))
-		no_shadow(box(g, "Glass", Vector3(w, h, 0.02), Vector3(0, sill_y, 0.012), glass))
-		no_shadow(box(g, "Garden", Vector3(w, 0.55, 0.01), Vector3(0, sill_y, 0.024), hedge))
-		# casing
-		box(g, "CasingL", Vector3(0.12, h + 0.12, 0.07), Vector3(-w * 0.5 - 0.06, sill_y, 0.035), white)
-		box(g, "CasingR", Vector3(0.12, h + 0.12, 0.07), Vector3(w * 0.5 + 0.06, sill_y, 0.035), white)
-		box(g, "CasingTop", Vector3(w + 0.36, 0.14, 0.09), Vector3(0, sill_y + h, 0.045), white)
-		box(g, "Sill", Vector3(w + 0.3, 0.06, 0.2), Vector3(0, sill_y - 0.04, 0.1), white)
-		# muntins
-		box(g, "MuntinV", Vector3(0.04, h, 0.03), Vector3(0, sill_y, 0.035), white)
-		for r in 3:
-			box(g, "MuntinH%d" % r, Vector3(w, 0.04, 0.03), Vector3(0, sill_y + h * (r + 1) / 4.0 - 0.02, 0.035), white)
-		# curtains
-		for side in [-1.0, 1.0]:
-			var cx: float = side * (w * 0.5 + 0.26)
-			var c := group(g, "Curtain%s" % ("L" if side < 0 else "R"), Vector3(cx, 0, 0.17))
-			box(c, "Cloth", Vector3(0.42, 2.95, 0.08), Vector3(0, 0.5, 0), mat(CURTAIN, 0.0, 0.95))
-			for f in 3:
-				box(c, "Fold%d" % f, Vector3(0.05, 2.95, 0.1), Vector3(-0.14 + f * 0.14, 0.5, 0), mat(CURTAIN_FOLD, 0.0, 0.95))
-			box(c, "Tieback", Vector3(0.46, 0.06, 0.13), Vector3(0, 1.3, 0), gold())
-		box(g, "Valance", Vector3(w + 1.1, 0.34, 0.16), Vector3(0, 3.15, 0.18), mat(CURTAIN, 0.0, 0.95))
-		box(g, "Fringe", Vector3(w + 1.12, 0.05, 0.17), Vector3(0, 3.12, 0.18), gold())
+		var g := window(_back, "Window%d" % i, WINDOW_XS[i], WINDOW_W, 2.1, 1.0)
+		no_shadow(box(g, "Garden", Vector3(WINDOW_W, 0.55, 0.01), Vector3(0, 1.0, 0.024), hedge))
+
+
+## The window on the left wall: the city skyline under the sky.
+func _build_left_window() -> void:
+	var w := LEFT_WINDOW_W
+	var sill_y := LEFT_WINDOW_SILL
+	var g := window(_left, "LeftWindow", ZC - LEFT_WINDOW_Z, w, LEFT_WINDOW_H, sill_y)
+	var city := group(g, "Skyline", Vector3(0, sill_y, 0.025))   # just in front of the glass
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 2026
+	# a hazy far row, then the nearer towers in the city colours, then trees
+	var haze := mat(Color(0.6, 0.7, 0.84), 0.6, 0.9)
+	var x := -w * 0.5
+	while x < w * 0.5:
+		var bw := rng.randf_range(0.07, 0.15)
+		var bh := rng.randf_range(0.45, 1.05)
+		var cw := minf(bw, w * 0.5 - x)
+		no_shadow(box(city, "Far", Vector3(cw, bh, 0.002), Vector3(x + cw * 0.5, 0, 0), haze))
+		x += bw
+	x = -w * 0.5
+	var k := 0
+	while x < w * 0.5:
+		var bw := rng.randf_range(0.08, 0.17)
+		var bh := rng.randf_range(0.25, 0.8)
+		var cw := minf(bw, w * 0.5 - x)
+		var col: Color = (PALETTE[rng.randi() % PALETTE.size()] as Color).lerp(Color(0.55, 0.62, 0.78), 0.15)
+		no_shadow(box(city, "Tower%d" % k, Vector3(cw - 0.008, bh, 0.003), Vector3(x + cw * 0.5, 0, 0.004),
+			mat(col, 0.35, 0.9)))
+		# a column of lit windows
+		if bh > 0.22 and cw > 0.06:
+			for r in int(bh / 0.07):
+				no_shadow(box(city, "Lit%d_%d" % [k, r], Vector3(cw * 0.45, 0.014, 0.002),
+					Vector3(x + cw * 0.5, 0.04 + r * 0.07, 0.0065), mat(Color(1.0, 0.95, 0.75), 0.9, 0.9)))
+		x += bw
+		k += 1
+	no_shadow(box(city, "Trees", Vector3(w, 0.1, 0.004), Vector3(0, 0, 0.008), mat(HEDGE, 0.5, 0.8)))
+	# a little daylight from this side too
+	var s := SpotLight3D.new()
+	s.name = "LeftWindowLight"
+	s.light_color = Color(0.86, 0.92, 1.0)
+	s.light_energy = 1.1
+	s.spot_range = 7.0
+	s.spot_angle = 45.0
+	s.position = Vector3(0, sill_y + LEFT_WINDOW_H - 0.3, 0.3)
+	s.rotation_degrees = Vector3(-35.0, 180.0, 0.0)   # into the room, tipped down
+	g.add_child(s)
+
+
+## Glass, casing, sill, muntins and curtains in a wall, facing local +Z.
+func window(parent: Node3D, n: String, lx: float, w: float, h: float, sill_y: float) -> Node3D:
+	var glass := mat(SKY, 1.1, 0.1)
+	var white := mat(TRIM, 0.0, 0.6)
+	var g := group(parent, n, Vector3(lx, 0, 0))
+	no_shadow(box(g, "Glass", Vector3(w, h, 0.02), Vector3(0, sill_y, 0.012), glass))
+	# casing
+	box(g, "CasingL", Vector3(0.12, h + 0.12, 0.07), Vector3(-w * 0.5 - 0.06, sill_y, 0.035), white)
+	box(g, "CasingR", Vector3(0.12, h + 0.12, 0.07), Vector3(w * 0.5 + 0.06, sill_y, 0.035), white)
+	box(g, "CasingTop", Vector3(w + 0.36, 0.14, 0.09), Vector3(0, sill_y + h, 0.045), white)
+	box(g, "Sill", Vector3(w + 0.3, 0.06, 0.2), Vector3(0, sill_y - 0.04, 0.1), white)
+	# muntins
+	box(g, "MuntinV", Vector3(0.04, h, 0.03), Vector3(0, sill_y, 0.035), white)
+	for r in 3:
+		box(g, "MuntinH%d" % r, Vector3(w, 0.04, 0.03), Vector3(0, sill_y + h * (r + 1) / 4.0 - 0.02, 0.035), white)
+	# curtains
+	for side in [-1.0, 1.0]:
+		var cx: float = side * (w * 0.5 + 0.26)
+		var c := group(g, "Curtain%s" % ("L" if side < 0 else "R"), Vector3(cx, 0, 0.17))
+		box(c, "Cloth", Vector3(0.42, 2.95, 0.08), Vector3(0, 0.5, 0), mat(CURTAIN, 0.0, 0.95))
+		for f in 3:
+			box(c, "Fold%d" % f, Vector3(0.05, 2.95, 0.1), Vector3(-0.14 + f * 0.14, 0.5, 0), mat(CURTAIN_FOLD, 0.0, 0.95))
+		box(c, "Tieback", Vector3(0.46, 0.06, 0.13), Vector3(0, 1.3, 0), gold())
+	box(g, "Valance", Vector3(w + 1.1, 0.34, 0.16), Vector3(0, 3.15, 0.18), mat(CURTAIN, 0.0, 0.95))
+	box(g, "Fringe", Vector3(w + 1.12, 0.05, 0.17), Vector3(0, 3.12, 0.18), gold())
+	return g
 
 
 func _build_flags() -> void:
@@ -1205,6 +1429,426 @@ func _fill_paper() -> void:
 				Vector3(-pw * 0.5 + 0.02 * k + lw * 0.5, 0.002, -pd * 0.5 + (0.095 + i * 0.016) * k), line)
 	# signature line
 	box(paper, "Signature", Vector3(0.07 * k, 0.0008, 0.0012), Vector3(pw * 0.5 - 0.055 * k, 0.002, pd * 0.5 - 0.03 * k), mat(INK))
+
+
+# ---------------------------------------------------------------- stat gauges
+# A walnut plaque with a gold rim lying on the desk just below the paper (on
+# the player's side), so it sits along the bottom of the paper close-up. Each
+# of its four wells holds a gold icon that fills from the bottom up like
+# molten brass: the higher the stat, the more of the icon is lit. No numbers.
+
+## Plaque centre (the paper's lower edge is about 0.43 past DESK_Z, the desk's
+## front edge 0.55) and its size (x by z).
+const GAUGE_Z := DESK_Z + 0.492
+const GAUGE_SIZE := Vector2(0.6, 0.096)
+const GAUGE_ICON_H := 0.05
+## Same order as Stat.
+const GAUGE_ICONS := [
+	"res://PresidentRoom/icons/icon_awareness.png",
+	"res://PresidentRoom/icons/icon_money.png",
+	"res://PresidentRoom/icons/icon_infrastructure.png",
+	"res://PresidentRoom/icons/icon_bureaucracy.png",
+]
+const GAUGE_NAMES := ["People's Awareness", "Money", "Infrastructure", "Bureaucracy"]
+const GAUGE_WELL := Color(0.1, 0.06, 0.035)
+
+const GAUGE_SHADER := """
+shader_type spatial;
+render_mode unshaded, cull_back, depth_draw_opaque, shadows_disabled;
+
+uniform sampler2D icon : source_color, filter_linear_mipmap, repeat_disable;
+uniform float fill : hint_range(0.0, 1.0) = 0.5;
+// the unlit part of the icon: dull bronze sunk into the walnut
+uniform vec3 empty_tint : source_color = vec3(0.47, 0.34, 0.18);
+// bright rim on the surface of the fill
+uniform vec3 line_color : source_color = vec3(1.0, 0.95, 0.72);
+// liquid motion: 0 calm .. 1 sloshing hard (set from code after a change)
+uniform float slosh = 0.0;
+// +1 the level just rose, -1 it just fell (bubbles rise / drip down)
+uniform float dir = 0.0;
+// colour the liquid takes after a change (green up / red down) and how much
+uniform vec3 tint : source_color = vec3(1.0);
+uniform float tint_amount = 0.0;
+
+float bubble(vec2 uv, float seed, float level, float time) {
+	float speed = 0.35 + fract(seed * 7.13) * 0.4;
+	float x = 0.15 + fract(seed * 3.71) * 0.7 + sin(time * 3.0 + seed * 9.0) * 0.03;
+	float y = fract(seed * 1.93 + time * speed * dir);
+	// rising: from the bottom up to the surface; falling: from the surface down
+	y = mix(level, 1.0, 1.0 - y);
+	float r = 0.025 + fract(seed * 5.3) * 0.02;
+	float d = length(uv - vec2(x, y));
+	return 1.0 - smoothstep(r * 0.55, r, d);
+}
+
+void fragment() {
+	vec4 t = texture(icon, UV);
+	float aa = fwidth(UV.y);
+	// keep the surface from poking out of a completely full or empty icon
+	float room = smoothstep(0.0, 0.06, fill) * smoothstep(1.0, 0.94, fill);
+	float x = UV.x;
+	// a slow idle ripple plus a big two-frequency slosh that dies down
+	float idle = sin(x * 11.0 + TIME * 2.1) * 0.006;
+	float wave = (sin(x * 15.0 - TIME * 8.5) * 0.65 + sin(x * 27.0 + TIME * 12.0) * 0.35)
+			* 0.06 * slosh;
+	// the whole surface tilts back and forth while it settles
+	float tilt = (x - 0.5) * sin(TIME * 6.0) * 0.08 * slosh;
+	float level = 1.0 - fill + (idle + wave + tilt) * room;
+	float lit = smoothstep(level - aa, level + aa, UV.y);
+
+	// the liquid: brighter just under the surface, deeper toward the bottom
+	float depth = clamp((UV.y - level) / 0.45, 0.0, 1.0);
+	vec3 liquid = t.rgb * mix(1.18, 0.82, depth);
+	float lum = dot(t.rgb, vec3(0.3, 0.59, 0.11));
+	vec3 tinted = tint * (0.45 + 0.9 * lum) * mix(1.25, 0.8, depth);
+	liquid = mix(liquid, tinted, tint_amount);
+	// bubbles inside the liquid while it moves
+	float b = 0.0;
+	for (int k = 0; k < 5; k++) {
+		b = max(b, bubble(UV, float(k) * 0.618 + 0.17, level, TIME));
+	}
+	b *= lit * clamp(slosh * 1.6, 0.0, 1.0) * step(0.5, abs(dir));
+	liquid = mix(liquid, mix(line_color, tint * 1.6, tint_amount * 0.7), b * 0.55);
+
+	vec3 col = mix(t.rgb * empty_tint, liquid, lit);
+	float edge = 1.0 - smoothstep(0.0, 0.016 + aa + 0.01 * slosh, abs(UV.y - level));
+	edge *= step(0.001, fill) * step(fill, 0.999);
+	vec3 rim = mix(line_color, tint * 1.5 + vec3(0.15), tint_amount);
+	ALBEDO = mix(col, rim, edge * 0.85);
+	ALPHA = t.a;
+}
+"""
+
+
+func _build_stat_gauges() -> void:
+	var g := group(_built, "StatGauges", Vector3(0, DESK_TOP, GAUGE_Z))
+	var w := GAUGE_SIZE.x
+	var d := GAUGE_SIZE.y
+	var thick := 0.016
+	box(g, "Rim", Vector3(w + 0.012, thick - 0.004, d + 0.012), Vector3.ZERO, gold())
+	box(g, "Plaque", Vector3(w, thick, d), Vector3.ZERO, mat(WOOD_DARK, 0.0, 0.4))
+	var shader := Shader.new()
+	shader.code = GAUGE_SHADER
+	var well := mat(GAUGE_WELL, 0.0, 0.9)
+	var slot_w := w / 4.0
+	var icon_z := -0.009 if show_stat_names else 0.0
+	for i in 4:
+		var s := group(g, "Gauge%d" % i, Vector3(-w * 0.5 + slot_w * (i + 0.5), thick, 0))
+		# sunken well with a fine gold frame
+		var ww := slot_w - 0.016
+		var wd := d - 0.016
+		box(s, "Well", Vector3(ww, 0.0006, wd), Vector3.ZERO, well)
+		var fr := 0.0018
+		box(s, "FrameT", Vector3(ww, 0.001, fr), Vector3(0, 0, -wd * 0.5), gold())
+		box(s, "FrameB", Vector3(ww, 0.001, fr), Vector3(0, 0, wd * 0.5), gold())
+		box(s, "FrameL", Vector3(fr, 0.001, wd), Vector3(-ww * 0.5, 0, 0), gold())
+		box(s, "FrameR", Vector3(fr, 0.001, wd), Vector3(ww * 0.5, 0, 0), gold())
+		# the icon, lying flat with its top away from the player
+		var m := ShaderMaterial.new()
+		m.shader = shader
+		m.set_shader_parameter("fill", get_stat(i as Stat) / 100.0)
+		_gauge_mats.append(m)
+		var tex := _icon_texture(GAUGE_ICONS[i])
+		if tex:
+			m.set_shader_parameter("icon", tex)
+			var aspect := float(tex.get_width()) / float(tex.get_height())
+			var q := QuadMesh.new()
+			q.size = Vector2(minf(GAUGE_ICON_H * aspect, ww - 0.02), GAUGE_ICON_H)
+			var mi := MeshInstance3D.new()
+			mi.name = "Icon"
+			mi.mesh = q
+			mi.material_override = m
+			mi.position = Vector3(0, 0.0012, icon_z)
+			mi.rotation_degrees.x = -90.0
+			no_shadow(mi)
+			s.add_child(mi)
+		if show_stat_names:
+			no_shadow(label(s, "Name", GAUGE_NAMES[i], Vector3(0, 0.0012, wd * 0.5 - 0.011),
+				0.00015, GOLD, GOLD, Vector3(-90, 0, 0), 0))
+		# the crystal that floats above this gauge while a held stamp would
+		# change it (between the paper's lower edge and the plaque)
+		_hints.append(_crystal(s, Vector3(0, HINT_Y, -d * 0.5 - 0.009)))
+		# the arrow the crystal turns into once the stamp lands
+		_arrows.append(_change_arrow(s, Vector3(0, HINT_Y, -d * 0.5 - 0.009)))
+
+
+const HINT_Y := 0.03
+const CRYSTAL := Color(0.45, 0.88, 1.0)
+
+## A small glowing crystal (a stretched octahedron with a soft halo), hidden.
+func _crystal(parent: Node3D, pos: Vector3) -> Node3D:
+	var g := group(parent, "Crystal", pos)
+	var r := 0.0085
+	var hh := 0.0135
+	var pts := [Vector3(0, hh, 0), Vector3(0, -hh, 0),
+		Vector3(r, 0, 0), Vector3(0, 0, r), Vector3(-r, 0, 0), Vector3(0, 0, -r)]
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for k in 4:
+		var a: Vector3 = pts[2 + k]
+		var b: Vector3 = pts[2 + (k + 1) % 4]
+		for tri in [[pts[0], b, a], [pts[1], a, b]]:
+			for v: Vector3 in tri:
+				st.add_vertex(v)
+	st.generate_normals()
+	var gem := MeshInstance3D.new()
+	gem.name = "Gem"
+	gem.mesh = st.commit()
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(CRYSTAL, 0.85)
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.metallic = 0.3
+	m.roughness = 0.05
+	m.emission_enabled = true
+	m.emission = CRYSTAL
+	m.emission_energy_multiplier = 2.4
+	m.rim_enabled = true
+	m.rim = 0.8
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	gem.material_override = m
+	no_shadow(gem)
+	g.add_child(gem)
+	# soft glow around it, always facing the camera
+	var grad := Gradient.new()
+	grad.set_color(0, Color(0.75, 0.95, 1.0, 0.75))
+	grad.set_color(1, Color(0.5, 0.85, 1.0, 0.0))
+	var tex := GradientTexture2D.new()
+	tex.gradient = grad
+	tex.fill = GradientTexture2D.FILL_RADIAL
+	tex.fill_from = Vector2(0.5, 0.5)
+	tex.fill_to = Vector2(0.5, 0.0)
+	tex.width = 64
+	tex.height = 64
+	var hm := StandardMaterial3D.new()
+	hm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	hm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	hm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	hm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	hm.albedo_texture = tex
+	hm.no_depth_test = true
+	var q := QuadMesh.new()
+	q.size = Vector2(0.05, 0.05)
+	var halo := MeshInstance3D.new()
+	halo.name = "Halo"
+	halo.mesh = q
+	halo.material_override = hm
+	no_shadow(halo)
+	g.add_child(halo)
+	g.visible = false
+	g.scale = Vector3.ONE * 0.01
+	return g
+
+
+## Pop the crystals in and out, and keep the visible ones turning and bobbing.
+func _animate_hints(delta: float) -> void:
+	for i in _hints.size():
+		var c := _hints[i]
+		if not is_instance_valid(c):
+			continue
+		var target := 1.0 if _hint_on[i] else 0.0
+		_hint_k[i] = move_toward(_hint_k[i], target, delta * (5.0 if _hint_on[i] else 7.0))
+		var k := _hint_k[i]
+		c.visible = k > 0.0
+		if not c.visible:
+			continue
+		# a little overshoot as it appears
+		var s := k * (1.0 + 0.35 * sin(k * PI)) if _hint_on[i] else k
+		c.scale = Vector3.ONE * maxf(s, 0.01)
+		c.position.y = HINT_Y + sin(_t * 3.2 + i * 1.3) * 0.0022
+		c.rotation.y = _t * 1.6 + i
+
+
+const ARROW_UP := Color(0.25, 0.95, 0.4)
+const ARROW_DOWN := Color(1.0, 0.27, 0.22)
+## Seconds the arrow stays up / the liquid stays coloured / it sloshes.
+const ARROW_TIME := 2.4
+const TINT_HOLD := 1.6
+const TINT_FADE := 1.0
+const SLOSH_TIME := 2.4
+
+
+## A flat arrow (pointing +Y, or -Y when down) for a billboard, in the XY plane.
+func _arrow_mesh(down: bool, scale_k := 1.0) -> Mesh:
+	var h := 0.032 * scale_k
+	var hw := 0.013 * scale_k
+	var sw := 0.0045 * scale_k
+	var head := 0.015 * scale_k
+	var top := h * 0.5
+	var yb := top - head
+	var bot := -h * 0.5
+	var sg := -1.0 if down else 1.0
+	var tris := [
+		[Vector3(-hw, yb, 0), Vector3(hw, yb, 0), Vector3(0, top, 0)],
+		[Vector3(-sw, bot, 0), Vector3(sw, bot, 0), Vector3(sw, yb, 0)],
+		[Vector3(-sw, bot, 0), Vector3(sw, yb, 0), Vector3(-sw, yb, 0)],
+	]
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_normal(Vector3(0, 0, 1))
+	for tri in tris:
+		for v: Vector3 in tri:
+			st.add_vertex(Vector3(v.x, v.y * sg, v.z))
+	return st.commit()
+
+
+func _billboard_mat(c: Color, priority := 0) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.albedo_color = c
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	m.billboard_keep_scale = true
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	m.no_depth_test = true
+	m.render_priority = priority
+	if c.a < 1.0:
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	return m
+
+
+## A glowing green up / red down arrow, always facing the camera, hidden.
+func _change_arrow(parent: Node3D, pos: Vector3) -> Node3D:
+	var g := group(parent, "ChangeArrow", pos)
+	# soft halo behind it, coloured on trigger
+	var grad := Gradient.new()
+	grad.set_color(0, Color(1, 1, 1, 0.8))
+	grad.set_color(1, Color(1, 1, 1, 0.0))
+	var tex := GradientTexture2D.new()
+	tex.gradient = grad
+	tex.fill = GradientTexture2D.FILL_RADIAL
+	tex.fill_from = Vector2(0.5, 0.5)
+	tex.fill_to = Vector2(0.5, 0.0)
+	tex.width = 64
+	tex.height = 64
+	var hm := _billboard_mat(Color(1, 1, 1, 1), 1)
+	hm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	hm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	hm.albedo_texture = tex
+	_arrow_halo_mats.append(hm)
+	var q := QuadMesh.new()
+	q.size = Vector2(0.07, 0.07)
+	var halo := MeshInstance3D.new()
+	halo.name = "Halo"
+	halo.mesh = q
+	halo.material_override = hm
+	no_shadow(halo)
+	g.add_child(halo)
+	for down in [false, true]:
+		var col := ARROW_DOWN if down else ARROW_UP
+		var a := Node3D.new()
+		a.name = "Down" if down else "Up"
+		g.add_child(a)
+		# dark outline, then a bright core, then the coloured arrow on top
+		var outline := MeshInstance3D.new()
+		outline.mesh = _arrow_mesh(down, 1.28)
+		outline.material_override = _billboard_mat(Color(0.08, 0.05, 0.03), 2)
+		no_shadow(outline)
+		a.add_child(outline)
+		var body := MeshInstance3D.new()
+		body.mesh = _arrow_mesh(down, 1.0)
+		body.material_override = _billboard_mat(col.lightened(0.15), 3)
+		no_shadow(body)
+		a.add_child(body)
+	g.visible = false
+	g.set_meta("base", pos)
+	return g
+
+
+## A stamp landed and changed this stat: the crystal turns into an arrow and
+## the liquid in the icon sloshes and takes the arrow's colour.
+func _play_change_fx(stat: int, dir: float) -> void:
+	if stat >= _gauge_mats.size():
+		return
+	_fx_age[stat] = 0.0
+	_fx_dir[stat] = dir
+	var col := ARROW_UP if dir > 0.0 else ARROW_DOWN
+	var m := _gauge_mats[stat]
+	m.set_shader_parameter("tint", col)
+	m.set_shader_parameter("dir", dir)
+	# swap the crystal for the arrow straight away
+	if stat < _hints.size():
+		_hint_on[stat] = false
+		_hint_k[stat] = 0.0
+		if is_instance_valid(_hints[stat]):
+			_hints[stat].visible = false
+	if stat < _arrows.size() and is_instance_valid(_arrows[stat]):
+		var a := _arrows[stat]
+		a.get_node("Up").visible = dir > 0.0
+		a.get_node("Down").visible = dir < 0.0
+		_arrow_halo_mats[stat].albedo_color = Color(col, 0.9)
+
+
+## Arrows pop in, bob in their direction and fade; the liquid settles and its
+## colour drains back to gold.
+func _animate_gauge_fx(delta: float) -> void:
+	var cam_up := camera.global_basis.y if camera else Vector3.UP
+	for i in _gauge_mats.size():
+		if _fx_age[i] < 0.0:
+			continue
+		_fx_age[i] += delta
+		var age := _fx_age[i]
+		var dir := _fx_dir[i]
+		var m := _gauge_mats[i]
+		var sl := clampf(1.0 - age / SLOSH_TIME, 0.0, 1.0)
+		m.set_shader_parameter("slosh", sl * sl)
+		var tint_k := 1.0 - clampf((age - TINT_HOLD) / TINT_FADE, 0.0, 1.0)
+		m.set_shader_parameter("tint_amount", smoothstep(0.0, 1.0, tint_k) * minf(age / 0.15, 1.0))
+		if i < _arrows.size() and is_instance_valid(_arrows[i]):
+			var a := _arrows[i]
+			var on := age < ARROW_TIME
+			a.visible = on
+			if on:
+				var k := clampf(age / 0.28, 0.0, 1.0)
+				var s := k * (1.0 + 0.45 * sin(k * PI))
+				s *= clampf((ARROW_TIME - age) / 0.45, 0.0, 1.0)
+				a.scale = Vector3.ONE * maxf(s, 0.01)
+				# bounce along the arrow's own direction on screen, drifting that way
+				var off := dir * (0.0035 * absf(sin(age * 7.5)) + 0.006 * smoothstep(0.0, ARROW_TIME, age))
+				var base: Vector3 = a.get_meta("base")
+				var pb := a.get_parent() as Node3D
+				var local_up := (pb.global_basis.inverse() * cam_up).normalized() if pb else Vector3.UP
+				a.position = base + local_up * off
+				var pulse := 0.75 + 0.25 * sin(age * 10.0)
+				var hc := _arrow_halo_mats[i].albedo_color
+				_arrow_halo_mats[i].albedo_color = Color(hc.r, hc.g, hc.b, 0.9 * pulse * minf(s, 1.0))
+		if age > maxf(ARROW_TIME, maxf(SLOSH_TIME, TINT_HOLD + TINT_FADE)):
+			_fx_age[i] = -1.0
+			m.set_shader_parameter("slosh", 0.0)
+			m.set_shader_parameter("tint_amount", 0.0)
+
+
+## Ease (or snap) one gauge's fill to its stat.
+func _show_stat(stat: Stat, animate: bool) -> void:
+	if stat >= _gauge_mats.size():
+		return
+	var m := _gauge_mats[stat]
+	var target := get_stat(stat) / 100.0
+	var old: Tween = _gauge_tweens[stat]
+	if old and old.is_valid():
+		old.kill()
+	if animate and is_inside_tree():
+		var t := create_tween().set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		t.tween_property(m, "shader_parameter/fill", target, 1.1)
+		_gauge_tweens[stat] = t
+	else:
+		m.set_shader_parameter("fill", target)
+
+
+## Icon texture with mipmaps, so it stays smooth when drawn small.
+func _icon_texture(path: String) -> Texture2D:
+	var img: Image
+	if ResourceLoader.exists(path):
+		var t := load(path) as Texture2D
+		if t:
+			img = t.get_image()
+	if img == null or img.is_empty():
+		img = Image.load_from_file(path)
+	if img == null or img.is_empty():
+		push_warning("PresidentRoom: missing gauge icon %s" % path)
+		return null
+	if img.is_compressed():
+		img.decompress()
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
 
 
 ## Two rubber stamps on their ink pads, either side of the paper:

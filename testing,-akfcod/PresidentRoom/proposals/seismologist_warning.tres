@@ -1,0 +1,22 @@
+[gd_resource type="Resource" format=3]
+
+[ext_resource type="Script" path="res://PresidentRoom/proposal_data.gd" id="1_data"]
+
+[resource]
+script = ExtResource("1_data")
+id = "seismologist_warning"
+character = "Chief Seismologist"
+start = true
+first = true
+says = "Mayor, the fault under our city is waking up. I can't give you a date, but the big one is coming. I want to go on TV tonight and warn everyone."
+deny_label = "Keep it quiet"
+deny_people = -10
+deny_money = 10
+deny_caption = "You kept the *warning* off the air. The tourists keep coming and the markets stay calm. But deep under the city, the fault is waking up, and nobody knows."
+deny_cutscene = 2
+approve_label = "Go on TV tonight"
+approve_people = 15
+approve_money = -10
+approve_caption = "Tonight the *Chief Seismologist* went on live TV. Now the whole city knows the big one is coming. People are getting ready, but house prices and tourism are already falling."
+approve_cutscene = 1
+note = "Tür: takas. Zincir: tek. Her oyunun ilk kartı (first = true), oyunun girişi. Susmak piyasayı ve turizmi sakin tutar ama halk habersiz kalır (gün sonu: CALM_CITY çizgi film). Açıklamak bilinci yükseltir, emlak ve turizm geliri düşer (gün sonu: NEWS_BROADCAST, Pac-Man spiker)."

@@ -121,7 +121,7 @@ func _init() -> void:
 func build(p_role: Role, p_female: bool) -> void:
 	role = p_role
 	female = p_female
-	walk_speed = randf_range(1.15, 1.35)
+	walk_speed = randf_range(2.1, 2.4)
 	if role == Role.STEWARD:
 		walk_speed *= 0.9
 	_build()

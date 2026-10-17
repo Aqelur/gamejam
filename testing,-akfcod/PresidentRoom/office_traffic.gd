@@ -23,7 +23,10 @@ const Act := Visitor.Act
 ## Desk numbers from president_room.gd (DESK_TOP, DESK_Z).
 const DESK_TOP := 0.78
 const DESK_Z := 0.35
-const DOOR_SPEED := 1.25        # door swings fully open in ~0.8 s
+const DOOR_SPEED := 2.5         # door swings fully open in ~0.4 s
+## Seconds after a stamp before the same proposer hands over the next paper
+## (the stamped one is off the desk by then, see proposal_desk.gd).
+const NEXT_PAPER_DELAY := 1.5
 
 var room                     # president_room.gd (untyped: it is a @tool script with its own members)
 var visitors: Array = []     # office_visitor.gd instances
@@ -34,6 +37,8 @@ var _next_id := 0
 ## The person whose proposal is (or soon will be) on the paper.
 var proposer: Node3D = null
 var _proposer_t := 1.5     # seconds until the next proposer sets off
+## No new proposer sets off while true (the day is over, see day_cycle.gd).
+var paused := false
 var _coffee_t := 20.0      # seconds until the steward may come again
 var _doors := {}     # door name -> {"centre": Vector3, "hold": float}
 var _nodes := {}     # waypoint name -> Vector3
@@ -172,9 +177,10 @@ func _process(delta: float) -> void:
 
 	# the next proposer sets off once the last one has gone
 	if proposer == null:
-		_proposer_t -= delta
-		if _proposer_t <= 0.0:
-			_send_proposer()
+		if not paused:
+			_proposer_t -= delta
+			if _proposer_t <= 0.0:
+				_send_proposer()
 	elif proposer.state == Visitor.State.ACT and not proposer.get_meta("presented", false):
 		proposer.set_meta("presented", true)
 		proposer_arrived.emit(proposer)
@@ -214,14 +220,30 @@ func _send_steward() -> void:
 	_send_in(Role.STEWARD, Act.SERVE, ["MainDoor", "SideDoor"].pick_random(), spot)
 
 
-## The player stamped the proposal: the proposer reacts and leaves, and the
-## next one comes after a pause.
-func proposal_decided(approved: bool) -> void:
+## The player stamped the proposal. With `more` the same proposer stays at
+## the desk and hands over the next paper right away; otherwise they react and
+## leave, and the next one comes after a pause.
+func proposal_decided(approved: bool, more := false) -> void:
 	if proposer == null:
+		return
+	if more:
+		get_tree().create_timer(NEXT_PAPER_DELAY).timeout.connect(_hand_next.bind(proposer))
 		return
 	proposer.decide(approved)
 	proposer = null
 	_proposer_t = randf_range(room.proposer_interval.x, room.proposer_interval.y)
+
+
+func _hand_next(v: Node3D) -> void:
+	if v == proposer and is_instance_valid(v) and not paused:
+		proposer_arrived.emit(v)
+
+
+## Stop (true) or start again (false) sending proposers in.
+func set_paused(on: bool) -> void:
+	paused = on
+	if not on:
+		_proposer_t = randf_range(1.0, 2.0)
 
 
 func _free_spot(act: int, door: String) -> Dictionary:

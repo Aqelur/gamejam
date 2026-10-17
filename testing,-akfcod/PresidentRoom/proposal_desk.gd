@@ -17,6 +17,9 @@ extends Node3D
 
 ## A stamp hit the paper. The proposal is decided.
 signal stamped(approved: bool)
+## The stamp being held moved over the paper (1 = APPROVED, 0 = DENIED) or
+## off it / was put down (-1). The room shows which stats it would touch.
+signal aim_changed(choice: int)
 
 const DESK_TOP := 0.78
 ## Height the held stamp floats at, above the desk.
@@ -37,6 +40,7 @@ var _press_pos := Vector2.ZERO
 var _busy := false           # a stamp is slamming down or flying home
 var _paper_tween: Tween
 var _shake_tween: Tween
+var _aim := -1
 
 
 func setup(p_room) -> void:
@@ -117,7 +121,11 @@ func _process(_delta: float) -> void:
 			# lean a little toward where it is heading
 			var lean: Vector3 = target - _held.position
 			_held.rotation = Vector3(clampf(lean.z * 6.0, -0.25, 0.25), 0.0, clampf(-lean.x * 6.0, -0.25, 0.25))
+		var over: bool = has_proposal and room.paper.visible \
+			and _over_paper(Vector3(_held.position.x, 0, _held.position.z))
+		_set_aim((1 if _held.get_meta("approved") else 0) if over else -1)
 		return
+	_set_aim(-1)
 	# hover: the stamp under the mouse lifts a little
 	var hover: Node3D = null
 	if not _busy and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
@@ -294,6 +302,12 @@ func _over_paper(spot: Vector3) -> bool:
 	var local := paper.to_local(global_transform * spot)
 	var half: Vector2 = room.PAPER_SIZE * 0.5 + Vector2(0.03, 0.03)
 	return absf(local.x) < half.x and absf(local.z) < half.y
+
+
+func _set_aim(choice: int) -> void:
+	if choice != _aim:
+		_aim = choice
+		aim_changed.emit(choice)
 
 
 func _kill(t: Tween) -> void:

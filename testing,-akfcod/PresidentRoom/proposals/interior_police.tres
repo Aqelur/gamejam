@@ -1,0 +1,23 @@
+[gd_resource type="Resource" format=3]
+
+[ext_resource type="Script" path="res://PresidentRoom/proposal_data.gd" id="1_data"]
+
+[resource]
+script = ExtResource("1_data")
+id = "interior_police"
+character = "Minister of Interior"
+start = true
+says = "This town doesn't have a police station. Someone has to keep order and stop the looting. Sign the order and I'll have officers here by the end of the week."
+deny_label = "Not now"
+deny_money = 10
+deny_readiness = -5
+deny_bureaucracy = -5
+deny_caption = "You turned down the *Police Station*. The lot stays empty, and when the quake hits, nobody will be there to keep order or stop the looting."
+approve_label = "Sign the order"
+approve_money = -10
+approve_readiness = 5
+approve_bureaucracy = 10
+approve_caption = "You signed the order for a *Police Station*, and now our city has officers to keep the peace."
+approve_action = 1
+city_target = "Districts/CivicCenter/Buildings/PoliceStation"
+note = "Tür: takas. Zincir: tek. Şehirde polis karakolu yok. Reddetmek kasayı rahatlatır ve bürokrasiyi azaltır ama hazırlık düşer. Onaylanınca Civic Center'daki arsada polis karakolu yapılır."
