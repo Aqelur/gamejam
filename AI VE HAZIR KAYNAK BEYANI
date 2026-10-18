@@ -5,10 +5,40 @@ Bu belge, yarışma kuralları gereği projede kullanılan tüm hazır kaynaklar
 
 ## 1. Hazır Kaynaklar (Assets)
 *(Kural 3.4 gereği: Oyun içinde kullanılan her türlü hazır görsel, ses, model, animasyon, font veya kod kütüphanesi burada belirtilmelidir. Hiç hazır kaynak kullanmadıysanız bu bölümün altına "Projede hiçbir hazır kaynak kullanılmamıştır." yazınız.)*
-ses v muzik icin pixabay.com
-oyun asset olarak kenney.nl den city kit (commercial)
-logolar flaticondan alindi ve geminiden cevirttirildi
 
+Görsel Açıklaması:
+
+Kenney – City Kit (Commercial), kenney.nl: Şehirdeki tüm bina modelleri ve colormap dokusu (Lisans: CC0)
+
+Flaticon, flaticon.com: Logolar ve ikonlar (Gemini ile düzenlendi), menü ve arayüz (Lisans: Flaticon, atıf gerekli)
+
+Google Fonts (Montserrat): Menü ve başkanlık odası yazıları (Lisans: SIL Open Font License)
+
+Ses Açıklaması:
+
+Pixabay – "Smooth Waters" (sergepavkinmusic, #115977): Menü müziği (Lisans: Pixabay License)
+
+Pixabay – "Breaking News" (monume, #547918): Haber sahnesi (Lisans: Pixabay License)
+
+Pixabay – "Flute" (leberch, #587281): Oyun içi müzik (Lisans: Pixabay License)
+
+Pixabay – "Eco Technology" (lexin_music, #145636): Oyun içi müzik (Lisans: Pixabay License)
+
+Pixabay – "Best Dramatic Music" (music_for_creators, #136824): Oyun içi müzik (Lisans: Pixabay License)
+
+Pixabay – "Aggressive Low Frequency Growl" (fronbondi_skegs, #608306): Deprem / kötü son (Lisans: Pixabay License)
+
+Pixabay – "Emergency Warning System" (#313128): Acil durum sireni (Lisans: Pixabay License)
+
+Pixabay – "Wind Blowing SFX" (jci-21, #12809): Rüzgar sesi (Lisans: Pixabay License)
+
+Freesound – "Construction, Jackhammer Excavator, A" (InspectorJ, #400991): Şehir inşaat sesi (Lisans: CC BY 4.0)
+
+Freesound – "Hammering Nails, Close, A" (InspectorJ, #406048): İnşaat çekiç sesi (Lisans: CC BY 4.0)
+
+Freesound – "big crowd chatter" (Kyster, #124027): Kalabalık sesi (Lisans: CC BY 4.0)
+
+Freesound – "Metal 06" (Debsound, #168822): Metal çarpma sesi (Lisans: CC BY-NC 4.0)
 
 
 
@@ -16,7 +46,23 @@ logolar flaticondan alindi ve geminiden cevirttirildi
 *(Kural 4.2 gereği: Geliştirme sürecinde kullanılan tüm yapay zeka araçları (kod yazımı, görsel/ses üretimi, fikir alma vb.) burada belirtilmelidir. Hiç AI kullanmadıysanız bu bölümün altına "Projede hiçbir yapay zeka aracı kullanılmamıştır." yazınız.)*
 Cursor - Grok 4.6 ve Claude Opus 5.5 ile kodlama, senaryo uretimi , animasyonlar, gorsel uretim 
 
-gemini ile logonun gorundugu video yapildi
+Görsel Açıklaması:
+
+Cursor (Grok 4.6, Claude Opus 5.5): Oyun içi görsel üretimi ve animasyonlar (deprem efektleri, toz/enkaz/cam parçacıkları, bina çökme animasyonları, shader'lar)
+
+Google Gemini: Flaticon'dan alınan logoların dönüştürülmesi ve düzenlenmesi
+
+Kod Açıklaması:
+
+Cursor (Grok 4.6, Claude Opus 5.5): GDScript kodları ve shader'lar (başkanlık odası ve karar kartı sistemi, gün döngüsü, şehir/deprem simülasyonu, NPC davranışları, ara sahneler, menü)
+
+Metin Açıklaması:
+
+Cursor (Grok 4.6, Claude Opus 5.5): Senaryo üretimi (karar kartı metinleri, departman önerileri, diyaloglar, haber metinleri)
+
+Diğer Açıklaması:
+
+Google Gemini: Açılış ve kapanıştaki logo videosu (hydra_logo) tasarımı
 
 
 
