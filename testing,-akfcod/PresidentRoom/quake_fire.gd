@@ -355,6 +355,15 @@ func result() -> Dictionary:
 
 # ================================================================ shots
 
+## What the shots are of: the row that can burn (for clear_shot.gd, so its
+## own walls never count as being in the way).
+func subjects() -> Array:
+	var out: Array = []
+	for e in _row:
+		out.append(e.b)
+	return out
+
+
 ## Down on the road beside the row: [eye, look, creep] for day_cycle's _glide.
 func street_shot() -> Array:
 	var side := _park_out.cross(Vector3.UP)

@@ -294,6 +294,12 @@ func result() -> Dictionary:
 
 # ================================================================ camera
 
+## What the shots are of: the hospital, or its lot (for clear_shot.gd, so its
+## own walls never count as being in the way).
+func subjects() -> Array:
+	return [_hosp] if _hosp else []
+
+
 ## Lunchtime: from behind when it's cracked (on the cracks), else the front.
 func calm_shot() -> Array:
 	if cracked:

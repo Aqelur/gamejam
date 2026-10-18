@@ -124,6 +124,7 @@ const RainStorm := preload("res://PresidentRoom/rain_storm.gd")
 const Walkout := preload("res://PresidentRoom/walkout.gd")
 const ContractorTown := preload("res://PresidentRoom/contractor_town.gd")
 const StreetWitness := preload("res://PresidentRoom/street_witness.gd")
+const ClearShot := preload("res://PresidentRoom/clear_shot.gd")
 const PROPOSALS_DIR := "res://PresidentRoom/proposals"
 const CITY_SCENE := "res://City/city.tscn"
 const TITLE_SCENE := "res://menu/title_screen.tscn"
@@ -138,6 +139,11 @@ const TTS_RATE := 1.3
 ## so the toll afterwards still matches what happened.
 const ENDING_PACE := 1.45
 const ENDING_LINGER := 1.05
+## Ending glides that cross more than GLIDE_ARC_FROM city units arc up by
+## GLIDE_ARC of the distance (at most GLIDE_ARC_MAX), over the buildings.
+const GLIDE_ARC_FROM := 60.0
+const GLIDE_ARC := 0.2
+const GLIDE_ARC_MAX := 140.0
 const ENDING_HURRY := 4.0
 ## Longest a building takes to rise during the evening showcase (seconds).
 const EVENING_BUILD_TIME := 4.0
@@ -1151,7 +1157,7 @@ func _play_quake_old_quarter(ending: EarthquakeEnding) -> void:
 	var eye: Array = works.witness_shot()
 	_glide(eye[0], eye[1], 0.55)
 	await _walk_the_street(eye[0], eye[1], float(works._street_y), float(works._tile))
-	var wide: Array = works.district_shot()
+	var wide: Array = _clear(works.district_shot())
 	_glide(wide[0], wide[1], 3.2, wide[2])
 	var crash := 0.0
 	var left: float = oq.settle_time() - 1.2
@@ -1330,7 +1336,7 @@ func _play_quake_rescue(ending: EarthquakeEnding) -> void:
 
 	# 1. high over the ruins, the clock twenty minutes on
 	_next_beat()
-	var wide: Array = pr.wide_shot()
+	var wide: Array = _clear(pr.wide_shot())
 	_kill(_orbit)
 	_city_cam.look_at_from_position(wide[0], wide[1], Vector3.UP)
 	_glide(wide[0], wide[1], 0.05, wide[2])
@@ -1348,7 +1354,7 @@ func _play_quake_rescue(ending: EarthquakeEnding) -> void:
 	# 2. down by the nearest pile while the digging goes on
 	_next_beat()
 	await _hide_caption()
-	var close: Array = pr.site_shot()
+	var close: Array = _clear(pr.site_shot())
 	_glide(close[0], close[1], 2.4, close[2])
 	await _ending_watch(1.4)
 	_next_beat()
@@ -1449,7 +1455,7 @@ func _play_quake_room(ending: EarthquakeEnding) -> void:
 		await _cut_to_black(0.5)
 		if _rain:
 			_rain.set_indoors(false)   # down on the street: out in the rain
-		var street: Array = rq.street_shot()
+		var street: Array = _clear(rq.street_shot())
 		_kill(_orbit)
 		_city_cam.look_at_from_position(street[0], street[1], Vector3.UP)
 		_glide(street[0], street[1], 0.05, street[2])
@@ -1486,7 +1492,7 @@ func _play_quake_fire(ending: EarthquakeEnding) -> void:
 
 	# 1. a busy street at lunchtime
 	_next_beat()
-	var low: Array = mf.street_shot()
+	var low: Array = _clear(mf.street_shot(), mf.subjects())
 	_kill(_orbit)
 	_city_cam.look_at_from_position(low[0], low[1], Vector3.UP)
 	_glide(low[0], low[1], 0.05, low[2])
@@ -1518,7 +1524,7 @@ func _play_quake_fire(ending: EarthquakeEnding) -> void:
 	_next_beat()
 	await _cut_to_black(0.5)
 	mf.skip_ahead()
-	var wide: Array = mf.wide_shot()
+	var wide: Array = _clear(mf.wide_shot(), mf.subjects())
 	_kill(_orbit)
 	_city_cam.look_at_from_position(wide[0], wide[1], Vector3.UP)
 	_glide(wide[0], wide[1], 0.05, wide[2])
@@ -1582,7 +1588,7 @@ func _play_quake_park(ending: EarthquakeEnding) -> void:
 	# 1. a quiet lunchtime by the fountain
 	_next_beat()
 	pq.start_calm()
-	var low: Array = pq.empty_shot()
+	var low: Array = _clear(pq.empty_shot())
 	_kill(_orbit)
 	_city_cam.look_at_from_position(low[0], low[1], Vector3.UP)
 	_glide(low[0], low[1], 0.05, low[2])
@@ -1614,7 +1620,7 @@ func _play_quake_park(ending: EarthquakeEnding) -> void:
 	_next_beat()
 	await _cut_to_black(0.5)
 	pq.skip_ahead()
-	var wide: Array = pq.drill_shot()
+	var wide: Array = _clear(pq.drill_shot())
 	_kill(_orbit)
 	_city_cam.look_at_from_position(wide[0], wide[1], Vector3.UP)
 	_glide(wide[0], wide[1], 0.05, wide[2])
@@ -1633,7 +1639,7 @@ func _play_quake_park(ending: EarthquakeEnding) -> void:
 	_next_beat()
 	await _hide_caption()
 	if pq.tents:
-		var shot: Array = pq.camp_shot()
+		var shot: Array = _clear(pq.camp_shot())
 		await _glide(shot[0], shot[1], 2.2, shot[2])
 	line = pq.headline()
 	_type_caption(line)
@@ -1670,7 +1676,7 @@ func _play_quake_hospital(ending: EarthquakeEnding) -> void:
 
 	# 1. lunchtime at the Civic Center
 	_next_beat()
-	var calm: Array = hq.calm_shot()
+	var calm: Array = _clear(hq.calm_shot(), hq.subjects())
 	_kill(_orbit)
 	_city_cam.look_at_from_position(calm[0], calm[1], Vector3.UP)
 	_glide(calm[0], calm[1], 0.05, calm[2])
@@ -1692,7 +1698,7 @@ func _play_quake_hospital(ending: EarthquakeEnding) -> void:
 	ending.rumble(1.0, OldQuarterQuake.SHAKE_TIME)
 	hq.quake()
 	await _ending_watch(1.0)
-	var wide: Array = hq.quake_shot()
+	var wide: Array = _clear(hq.quake_shot(), hq.subjects())
 	_glide(wide[0], wide[1], 3.2, wide[2])
 	var left: float = hq.settle_time()
 	while left > 0.0 and not hq.is_done():
@@ -1711,7 +1717,7 @@ func _play_quake_hospital(ending: EarthquakeEnding) -> void:
 	_next_beat()
 	await _cut_to_black(0.5)
 	hq.skip_ahead()
-	var later: Array = hq.later_shot()
+	var later: Array = _clear(hq.later_shot(), hq.subjects())
 	_kill(_orbit)
 	_city_cam.look_at_from_position(later[0], later[1], Vector3.UP)
 	_glide(later[0], later[1], 0.05, later[2])
@@ -1801,6 +1807,16 @@ func _concert_talk(spoken: String, voice: AudioStream) -> void:
 	_talking = false
 
 
+## An ending shot ([eye, look, creep]) with any building that would stand
+## between the camera and what it shows swung out of the way (clear_shot.gd).
+## `subjects` are the nodes the shot is of: their own walls never count.
+func _clear(shot: Array, subjects: Array = []) -> Array:
+	var tile := 26.926893
+	if _ending and is_instance_valid(_ending):
+		tile = _ending._tile
+	return ClearShot.fix(_city_cam, shot, tile, subjects)
+
+
 ## Glide the city camera to `to`, looking at `look`, then keep creeping along
 ## `creep` while the moment plays out. Returns when the glide is done.
 func _glide(to: Vector3, look: Vector3, time: float, creep := Vector3.ZERO) -> void:
@@ -1809,8 +1825,22 @@ func _glide(to: Vector3, look: Vector3, time: float, creep := Vector3.ZERO) -> v
 	var l0 := p0 - _city_cam.global_basis.z * p0.distance_to(look)
 	_orbit = create_tween()
 	var dur := time * (ENDING_PACE if _in_ending else 1.0)
+	# In the ending, a move from one spot to another flies over the roofs
+	# rather than straight through whatever stands between them: it climbs
+	# first when going up, and arcs higher the further it goes across.
+	var lift := 0.0
+	var rise := false
+	if _in_ending and time > 0.2:
+		var across := Vector2(to.x - p0.x, to.z - p0.z).length()
+		if across > GLIDE_ARC_FROM:
+			lift = clampf(across * GLIDE_ARC, 0.0, GLIDE_ARC_MAX)
+		rise = to.y > p0.y + GLIDE_ARC_FROM * 0.3
 	_orbit.tween_method(func(k: float) -> void:
-		_city_cam.look_at_from_position(p0.lerp(to, k), l0.lerp(look, k), Vector3.UP), 0.0, 1.0, dur) \
+		var p := p0.lerp(to, k)
+		if rise:
+			p.y = lerpf(p0.y, to.y, 1.0 - (1.0 - k) * (1.0 - k))
+		p.y += lift * sin(PI * k)
+		_city_cam.look_at_from_position(p, l0.lerp(look, k), Vector3.UP), 0.0, 1.0, dur) \
 		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	if creep != Vector3.ZERO:
 		_orbit.tween_method(func(k: float) -> void:
