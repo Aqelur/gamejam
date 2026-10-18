@@ -48,6 +48,7 @@ var _doors := {}     # door name -> {"centre": Vector3, "hold": float}
 static var _door_open: AudioStream
 static var _door_close: AudioStream
 static var _door_sounds_loaded := false
+var _door_players: Array[AudioStreamPlayer3D] = []
 var _nodes := {}     # waypoint name -> Vector3
 var _edges := {}     # waypoint name -> Array of names
 var _spots: Array[Dictionary] = []
@@ -120,8 +121,17 @@ func camera_pos() -> Vector3:
 	return Vector3(0, 1.22, 1.38)
 
 
+## The office camera stays the listener while the city viewport covers the
+## screen, so a door one-shot would be heard over the map and the endings.
+func _hearing_office() -> bool:
+	if room == null or room.day_cycle == null:
+		return true
+	var box: CanvasItem = room.day_cycle.get("_city_box")
+	return box == null or not box.visible
+
+
 func _play_door(opening: bool, at: Vector3) -> void:
-	if paused:
+	if not _hearing_office():
 		return
 	if not _door_sounds_loaded:
 		_door_sounds_loaded = true
@@ -138,9 +148,27 @@ func _play_door(opening: bool, at: Vector3) -> void:
 	p.unit_size = 3.5
 	p.max_distance = 14.0
 	p.position = at
-	p.finished.connect(p.queue_free)
+	p.finished.connect(_forget_door.bind(p))
 	add_child(p)
+	_door_players.append(p)
 	p.play()
+
+
+func _forget_door(p: AudioStreamPlayer3D) -> void:
+	_door_players.erase(p)
+	if is_instance_valid(p):
+		p.queue_free()
+
+
+## Cut a door sound that started in the office once the view has left.
+func _silence_doors_outside() -> void:
+	if _hearing_office() or _door_players.is_empty():
+		return
+	var playing := _door_players.duplicate()
+	_door_players.clear()
+	for p in playing:
+		if is_instance_valid(p):
+			p.stop()
 
 
 func door_amount(door_name: String) -> float:
@@ -184,6 +212,7 @@ func cup_parent() -> Node3D:
 # ================================================================ update
 
 func _process(delta: float) -> void:
+	_silence_doors_outside()
 	# doors open for anyone about to walk through them, then close behind
 	for door_name: String in _doors:
 		var d: Dictionary = _doors[door_name]

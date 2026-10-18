@@ -92,19 +92,19 @@ const CREW_LOSS := 0.4
 const TRAINED_LOSS := 0.28
 
 ## Seconds the buildings shake.
-const SHAKE_TIME := 6.0
+const SHAKE_TIME := 4.4
 ## Seconds after start() that the gas main bursts.
-const BURST_TIME := 2.2
+const BURST_TIME := 1.6
 ## Seconds after the burst that the fire takes the next building.
-const NEXT_DOOR := 4.0
+const NEXT_DOOR := 2.6
 ## Seconds between the fire taking one building and the next (left alone).
-const SPREAD_TIME := 3.2
+const SPREAD_TIME := 2.3
 ## Seconds the trucks take to drive in (trained crews are quicker off the mark).
-const DRIVE_TIME := 6.5
-const TRAINED_DRIVE_TIME := 5.0
+const DRIVE_TIME := 4.6
+const TRAINED_DRIVE_TIME := 3.6
 ## Seconds of water it takes to put a building out.
-const DOUSE_TIME := 7.0
-const TRAINED_DOUSE_TIME := 4.5
+const DOUSE_TIME := 5.0
+const TRAINED_DOUSE_TIME := 3.2
 ## Water jets: station units / s^2 (slow so the arc reads), launch speed.
 const WATER_G := 3.0
 const JET_SPEED := 3.2
@@ -314,30 +314,30 @@ func saved_money() -> float:
 
 ## Read before the quake hits.
 func intro_line() -> String:
-	return "Across town, at the same moment. Lunch on *Main Street*: %s people in the old row of buildings by the road." \
+	return "Same moment, *Main Street*. %s people in the old row." \
 		% EarthquakeEnding.thousands(residents)
 
 
 ## Read once the shaking stops and the fire has taken hold.
 func fire_line() -> String:
-	return "The shaking snaps a gas main under the street. It goes up with a roar, and *fire* takes the corner building, then the one next door."
+	return "A gas main snaps. *Fire* takes the corner, then the next building."
 
 
 ## Read as the second half starts, minutes later.
 func later_line() -> String:
 	if fire_force:
 		if trained:
-			return "Sirens. Minutes later the trucks from the new *fire station* swing onto Main Street, and the crews the visiting team trained go straight to work."
-		return "Sirens. Minutes later the two trucks from the new *fire station* swing onto Main Street, ladders up, hoses out."
-	return "Nobody is coming. There is no *fire station* to call, and the fire jumps from roof to roof down the row."
+			return "Sirens. The trained crews from the *fire station* reach Main Street."
+		return "Sirens. Two trucks from the *fire station* reach Main Street."
+	return "No *fire station*. The fire jumps from roof to roof."
 
 
 ## Read once it's over.
 func headline() -> String:
 	if fire_force:
-		return "The *firefighters* held it to %d buildings and pulled people out through the smoke. They saved about %s lives and %s." \
-			% [burned, EarthquakeEnding.thousands(saved_lives()), EarthquakeEnding.money_text(saved_money())]
-	return "With nobody to fight it, the fire burned out the whole row: %d buildings gutted on *Main Street*, and %s people never got out." \
+		return "The *firefighters* held it to %d buildings and saved about %s lives." \
+			% [burned, EarthquakeEnding.thousands(saved_lives())]
+	return "The fire gutted %d buildings. %s people never got out." \
 		% [burned, EarthquakeEnding.thousands(dead)]
 
 
@@ -575,7 +575,7 @@ func _process(delta: float) -> void:
 			e.target = 0.0
 			e.heat = move_toward(e.heat, 0.0, delta / douse_time * e.douse)
 		else:
-			e.heat = move_toward(e.heat, e.target, delta * 0.12)
+			e.heat = move_toward(e.heat, e.target, delta * 0.17)
 		if e.heat > 0.05:
 			e.char = minf(0.85 if not fire_force else 0.6, e.char + delta * 0.035 * e.heat)
 		if e.heat <= 0.0 and e.douse > 0.0 and not e.out:

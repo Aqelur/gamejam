@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="CardData" format=3]
+
+[ext_resource type="Script" path="res://cards/card_data.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://denemegörselleri/4.jpeg" id="2_image"]
+[ext_resource type="Resource" path="res://cards/data/headman_supper.tres" id="3_denied"]
+[ext_resource type="Resource" path="res://cards/data/opposition_band.tres" id="4_approved"]
+
+[resource]
+script = ExtResource("1_script")
+id = "interior_band"
+character_name = "Minister of Interior"
+image = ExtResource("2_image")
+text = "Mayor, the band in the square played past midnight. I have a fine ready. Sign it, and the noise stops at ten from now on."
+denied_effect = Vector4i(5, 0, 0, -5)
+approved_effect = Vector4i(-5, 0, 0, 5)
+denied_follow = ExtResource("3_denied")
+approved_follow = ExtResource("4_approved")

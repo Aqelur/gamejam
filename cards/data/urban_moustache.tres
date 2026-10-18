@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="CardData" format=3]
+
+[ext_resource type="Script" path="res://cards/card_data.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://denemegörselleri/4.jpeg" id="2_image"]
+
+[resource]
+script = ExtResource("1_script")
+id = "urban_moustache"
+character_name = "Minister of Urban Planning"
+image = ExtResource("2_image")
+text = "Mayor, somebody painted a moustache on the lobby statue. I can have it cleaned by Monday. This is not my job, and it is not coming off by itself. Shall I call the cleaner?"
+denied_effect = Vector4i(5, 0, 0, 0)
+approved_effect = Vector4i(0, -5, 0, 5)

@@ -846,7 +846,8 @@ func wait_restart() -> void:
 			break
 		was_down = down
 	pulse.kill()
-	get_tree().reload_current_scene()
+	get_tree().set_meta(StoryIntro.REPLAY_META, true)
+	get_tree().change_scene_to_file("res://menu/story_intro.tscn")
 
 
 func _label(text: String, font: Font, px: int, color: Color, width := 0.0) -> Label:

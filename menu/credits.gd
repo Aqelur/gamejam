@@ -1,6 +1,6 @@
 extends Control
 
-## Kapanış satırlarının müziği sürer. "A GAME PRESENTED BY" söner, kısa bir boşluk kalır.
+## Kapanış satırlarının müziği sürer. "A GAME PRESENTED BY" son satırın ardından hemen gelir.
 ## Logo 39.2'de bir anda belirir; outro.wav içindeki vuruş o ana gömülüdür.
 ## Tıklama başlık ekranını açar.
 
@@ -58,23 +58,24 @@ func _until(mark: float) -> void:
 
 
 func _play() -> void:
-	await _until(CURTAIN_AT)
-	if _clock() < TITLE_AT:
+	if _clock() < TITLE_OUT_AT:
+		var open_time := 0.45
+		if _clock() >= CURTAIN_AT:
+			open_time = minf(0.5, maxf(0.05, TITLE_AT - _clock()))
 		var open := create_tween()
-		open.tween_property(_fade, "color:a", 0.0, minf(0.5, TITLE_AT - _clock()))
+		open.tween_property(_fade, "color:a", 0.0, open_time)
 		await open.finished
+		if _clock() < TITLE_OUT_AT:
+			var words := create_tween()
+			words.tween_property(_title, "modulate:a", 1.0, 1.15).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+			await words.finished
+			await _until(TITLE_OUT_AT)
+			if _clock() < LOGO_AT - 0.9:
+				var words_out := create_tween()
+				words_out.tween_property(_title, "modulate:a", 0.0, 0.75).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+				await words_out.finished
 	else:
 		_fade.color.a = 0.0
-	await _until(TITLE_AT)
-	if _clock() < TITLE_OUT_AT:
-		var words := create_tween()
-		words.tween_property(_title, "modulate:a", 1.0, 1.15).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-		await words.finished
-		await _until(TITLE_OUT_AT)
-		if _clock() < LOGO_AT - 0.9:
-			var words_out := create_tween()
-			words_out.tween_property(_title, "modulate:a", 0.0, 0.75).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
-			await words_out.finished
 	_title.visible = false
 	await _until(LOGO_AT)
 	_fade.color.a = 0.0
@@ -97,6 +98,7 @@ func _play() -> void:
 		_bed.stop()
 		if _bed.get_parent() == get_tree().root:
 			_bed.queue_free()
+	get_tree().set_meta(StoryIntro.REPLAY_META, true)
 	get_tree().change_scene_to_file(TITLE_SCENE)
 
 

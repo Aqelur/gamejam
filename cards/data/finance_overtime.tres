@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="CardData" format=3]
+
+[ext_resource type="Script" path="res://cards/card_data.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://denemegörselleri/5.jpeg" id="2_image"]
+[ext_resource type="Resource" path="res://cards/data/headman_locked_door.tres" id="3_denied"]
+[ext_resource type="Resource" path="res://cards/data/finance_fountain.tres" id="4_approved"]
+
+[resource]
+script = ExtResource("1_script")
+id = "finance_overtime"
+character_name = "Minister of Finance"
+image = ExtResource("2_image")
+text = "Mayor, the clerks want overtime for staying late with your visitors. Sign this and they get it. Refuse, and I send them home at five, visitors or not."
+denied_effect = Vector4i(0, 5, 0, -5)
+approved_effect = Vector4i(0, -10, 0, 5)
+denied_follow = ExtResource("3_denied")
+approved_follow = ExtResource("4_approved")

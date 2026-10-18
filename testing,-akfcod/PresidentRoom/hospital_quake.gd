@@ -223,11 +223,11 @@ func saved_lives() -> int:
 func intro_line() -> String:
 	match mode:
 		Mode.NONE:
-			return "The *Civic Center*, at the same moment. Where the city's hospital should stand, there is only an empty lot."
+			return "The *Civic Center*. Where the *hospital* should be: an empty lot."
 		Mode.SOUND:
-			return "The *Civic Center*, at the same moment. Inside the new *hospital*, %s patients and staff are having an ordinary afternoon." \
+			return "Inside the new *hospital*: %s patients and staff." \
 				% EarthquakeEnding.thousands(inside)
-	return "The *Civic Center*, at the same moment. The *cracks* are still there, up the back of the new hospital. %s patients and staff are inside." \
+	return "The *cracks* are still on the hospital. %s people inside." \
 		% EarthquakeEnding.thousands(inside)
 
 
@@ -235,25 +235,25 @@ func intro_line() -> String:
 func shake_line() -> String:
 	match mode:
 		Mode.NONE:
-			return "The ground heaves under the empty lot. There is nothing here to fall down, and nothing here to help."
+			return "The empty lot heaves. Nothing here to fall, and nothing here to help."
 		Mode.SOUND:
-			return "The *hospital* sways and its windows burst, but the concrete was poured in full. It holds, and the lights stay on."
+			return "The *hospital* sways, but the concrete holds."
 		Mode.HOLDS:
-			return "The *cracks* tear wider up the back wall and dust pours out of them. But it holds. The rest of the city was built strong enough to carry it, just."
-	return "The *cracks* split wide open. The cheap concrete gives way, and the *hospital* comes down on its own patients."
+			return "The *cracks* tear wider. It holds. Just."
+	return "The cheap concrete gives way. The *hospital* comes down."
 
 
 ## Read as the second half starts, half an hour later.
 func later_line() -> String:
 	match mode:
 		Mode.NONE:
-			return "Half an hour later the injured start arriving, carried on doors and in the backs of cars. %s of them, brought to where the hospital should have been." \
+			return "%s injured arrive, where the hospital should have been." \
 				% EarthquakeEnding.thousands(injured)
 		Mode.SOUND:
-			return "Half an hour later, the sirens. Ambulance after ambulance swings into the *emergency bay*, and the doctors are already waiting at the doors."
+			return "Ambulances fill the *emergency bay*. The doctors are waiting."
 		Mode.HOLDS:
-			return "Half an hour later the ambulances come anyway. The cracked wing is shut, the corridors are full, but the *emergency room* is still open."
-	return "Half an hour later the injured start arriving from all over the city, %s of them, to a pile of rubble where the *hospital* used to be." \
+			return "The cracked wing is shut, but the *emergency room* is open."
+	return "%s injured arrive, at the rubble where the *hospital* was." \
 		% EarthquakeEnding.thousands(injured)
 
 
@@ -261,15 +261,15 @@ func later_line() -> String:
 func headline() -> String:
 	match mode:
 		Mode.NONE:
-			return "%s people are hurt and there is nowhere to take them. Neighbours do what they can on the bare ground. %s of them don't make it." \
+			return "%s hurt, nowhere to take them. %s don't make it." \
 				% [EarthquakeEnding.thousands(injured), EarthquakeEnding.thousands(dead)]
 		Mode.SOUND:
-			return "The *hospital* takes in %s injured tonight. Without it, about %s more of them would have died." \
+			return "The *hospital* takes %s injured. About %s more would have died." \
 				% [EarthquakeEnding.thousands(injured), EarthquakeEnding.thousands(saved_lives())]
 		Mode.HOLDS:
-			return "Somehow the cracked *hospital* stood, and it treated %s injured tonight. It won't survive the next one." \
+			return "The cracked *hospital* stood, and treated %s injured." \
 				% EarthquakeEnding.thousands(injured)
-	return "%s patients and staff died when the cheap concrete gave way, and the %s injured from across the city had nowhere left to go." \
+	return "%s died inside. The %s injured had nowhere to go." \
 		% [EarthquakeEnding.thousands(inside_dead), EarthquakeEnding.thousands(injured)]
 
 

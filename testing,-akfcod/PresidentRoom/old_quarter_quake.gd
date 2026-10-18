@@ -277,7 +277,7 @@ func setup(city: Node3D, works, ending) -> bool:
 			if tall and _rng.randf() < (0.35 if braced else 0.7):
 				var axis := Vector3(_rng.randf_range(-1, 1), 0, _rng.randf_range(-1, 1)).normalized()
 				lean = Basis(axis, deg_to_rad(_rng.randf_range(8.0, 24.0)))
-			_props.append({"node": weakref(pn), "orig": pn.transform, "lean": lean, "seed": _rng.randf() * 100.0,
+			_props.append({"node": pn, "orig": pn.transform, "lean": lean, "seed": _rng.randf() * 100.0,
 				"delay": _flat(pn.global_position).distance_to(_flat(_epi)) / wave, "tall": tall})
 	return true
 
@@ -298,8 +298,8 @@ func razed_share() -> float:
 ## Read before the quake hits.
 func intro_line() -> String:
 	if braced:
-		return "Lunchtime in the *Old Quarter*. %s people are at home behind its freshly braced brick walls." % EarthquakeEnding.thousands(residents)
-	return "Lunchtime in the *Old Quarter*. %s people are at home behind its old brick walls." % EarthquakeEnding.thousands(residents)
+		return "Lunchtime in the *Old Quarter*. %s people, behind braced walls." % EarthquakeEnding.thousands(residents)
+	return "Lunchtime in the *Old Quarter*. %s people, behind old brick." % EarthquakeEnding.thousands(residents)
 
 
 ## Read once the dust settles.
@@ -307,13 +307,13 @@ func headline() -> String:
 	var total := maxf(1.0, float(_plan.size()))
 	if razed_share() >= 0.6:
 		if braced:
-			return "The braces weren't enough. The *Old Quarter* came down in seconds, and most of its people with it."
-		return "Nobody ever braced the *Old Quarter*. Its old bricks gave way in seconds, and the whole quarter crumbled to dust with its people inside."
+			return "The braces weren't enough. The *Old Quarter* came down."
+		return "Nobody braced the *Old Quarter*. It crumbled, people inside."
 	if razed_share() >= 0.25:
-		return "Half the *Old Quarter* is rubble. Where the old walls held, people crawled out into the dust."
+		return "Half the *Old Quarter* is rubble. Some crawled out."
 	if standing / total >= 0.7:
-		return "The *timber braces* held. The Old Quarter shook hard, but its buildings are still standing and its people are out in the street."
-	return "The *timber braces* held the walls up. The old buildings cracked and leaned, but most of their people made it out."
+		return "The *timber braces* held. The Old Quarter is still standing."
+	return "The *timber braces* held. Most people made it out."
 
 
 ## The result for earthquake_ending.gd. The note leads into the rescue
@@ -444,8 +444,8 @@ func _process(delta: float) -> void:
 				_wave_pm = null
 				get_tree().create_timer(3.0, false).timeout.connect(_wave_dust.queue_free)
 	for s in _props:
-		var n := (s.node as WeakRef).get_ref() as Node3D
-		if n == null:
+		var n: Node3D = s.node
+		if not is_instance_valid(n):
 			continue
 		var lt: float = _t - s.delay
 		if lt < 0.0:

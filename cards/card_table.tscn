@@ -32,6 +32,20 @@
 [ext_resource type="Resource" path="res://cards/data/finance_leftover.tres" id="c_21"]
 [ext_resource type="Resource" path="res://cards/data/headman_donation.tres" id="c_22"]
 [ext_resource type="Resource" path="res://cards/data/agency_grant.tres" id="c_23"]
+[ext_resource type="Resource" path="res://cards/data/headman_tractor.tres" id="c_24"]
+[ext_resource type="Resource" path="res://cards/data/finance_overtime.tres" id="c_25"]
+[ext_resource type="Resource" path="res://cards/data/interior_band.tres" id="c_26"]
+[ext_resource type="Resource" path="res://cards/data/contractor_tickets.tres" id="c_27"]
+[ext_resource type="Resource" path="res://cards/data/influencer_buns.tres" id="c_28"]
+[ext_resource type="Resource" path="res://cards/data/finance_lost_found.tres" id="c_29"]
+[ext_resource type="Resource" path="res://cards/data/urban_moustache.tres" id="c_30"]
+[ext_resource type="Resource" path="res://cards/data/fool_cushion.tres" id="c_31"]
+[ext_resource type="Resource" path="res://cards/data/influencer_tractor.tres" id="c_32"]
+[ext_resource type="Resource" path="res://cards/data/opposition_tractor.tres" id="c_33"]
+[ext_resource type="Resource" path="res://cards/data/headman_locked_door.tres" id="c_34"]
+[ext_resource type="Resource" path="res://cards/data/finance_fountain.tres" id="c_35"]
+[ext_resource type="Resource" path="res://cards/data/headman_supper.tres" id="c_36"]
+[ext_resource type="Resource" path="res://cards/data/opposition_band.tres" id="c_37"]
 [ext_resource type="Script" path="res://cards/balance_bar.gd" id="13_bar"]
 [ext_resource type="Texture2D" path="res://cards/images/icon_halk.png" id="14_halk"]
 [ext_resource type="Texture2D" path="res://cards/images/icon_para.png" id="15_para"]
@@ -80,6 +94,7 @@ grow_vertical = 2
 script = ExtResource("1_table")
 first_card = ExtResource("c_00")
 cards = Array[ExtResource("2_data")]([ExtResource("c_01"), ExtResource("c_02"), ExtResource("c_03"), ExtResource("c_04"), ExtResource("c_05"), ExtResource("c_06"), ExtResource("c_07"), ExtResource("c_08"), ExtResource("c_09"), ExtResource("c_10"), ExtResource("c_11"), ExtResource("c_12"), ExtResource("c_13"), ExtResource("c_14"), ExtResource("c_15"), ExtResource("c_16"), ExtResource("c_17"), ExtResource("c_18"), ExtResource("c_19"), ExtResource("c_20"), ExtResource("c_21"), ExtResource("c_22"), ExtResource("c_23")])
+extra_cards = Array[ExtResource("2_data")]([ExtResource("c_24"), ExtResource("c_32"), ExtResource("c_33"), ExtResource("c_25"), ExtResource("c_34"), ExtResource("c_35"), ExtResource("c_26"), ExtResource("c_36"), ExtResource("c_37"), ExtResource("c_27"), ExtResource("c_28"), ExtResource("c_29"), ExtResource("c_30"), ExtResource("c_31")])
 advisors = Array[ExtResource("4_adata")]([ExtResource("6_sengor"), ExtResource("7_gorur"), ExtResource("8_usumezsoy")])
 
 [node name="Background" type="ColorRect" parent="."]

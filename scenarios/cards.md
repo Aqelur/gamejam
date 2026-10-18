@@ -429,6 +429,146 @@ Bu kartlar yalnızca çubukları oynatır. Şehirde hiçbir şey değişmez.
 - DENIED: Awareness +5
 - APPROVED: Infrastructure +5, Bureaucracy +5
 
+### headman_tractor
+- Character: The Headman
+- Tür: takas
+- Zincir: traktör, 1. halka
+- Says: "Mayor, a tractor has been parked in front of the bakery since 1998. The baker says it's a wall. The family says it's heritage. Can you come down and settle it before somebody loses a tooth?"
+- DENIED: Awareness -5
+- APPROVED: Awareness +5, Money -5
+- Takip: DENIED → influencer_tractor, aynı oyunda birkaç kart sonra gelir
+- Takip: APPROVED → opposition_tractor, aynı oyunda birkaç kart sonra gelir
+- Map: yok
+
+### influencer_tractor
+- Character: The Influencer
+- Tür: takas
+- Zincir: traktör, 2. halka
+- Start: no, yalnızca headman_tractor DENIED ile aynı oyunda gelir
+- Says: "Mayor, the tractor in front of the bakery is all over my channel and the comments are a fight. Let me film one sentence from you. I'll keep it short, promise."
+- DENIED: Awareness -5
+- APPROVED: Awareness +10, Money -5
+- Map: yok
+
+### opposition_tractor
+- Character: Opposition Leader
+- Tür: zarar
+- Zincir: traktör, 2. halka
+- Start: no, yalnızca headman_tractor APPROVED ile aynı oyunda gelir
+- Says: "Mayor, you went down to the bakery and played judge over a tractor. Half the street says you pick favorites. Sign this apology, or I read the whole visit out at tonight's council meeting."
+- DENIED: Awareness -10
+- APPROVED: Money -10
+- Map: yok
+
+### finance_overtime
+- Character: Minister of Finance
+- Tür: takas
+- Zincir: mesai, 1. halka
+- Says: "Mayor, the clerks want overtime for staying late with your visitors. Sign this and they get it. Refuse, and I send them home at five, visitors or not."
+- DENIED: Money +5, Bureaucracy -5
+- APPROVED: Money -10, Bureaucracy +5
+- Takip: DENIED → headman_locked_door, aynı oyunda birkaç kart sonra gelir
+- Takip: APPROVED → finance_fountain, aynı oyunda birkaç kart sonra gelir
+- Map: yok
+
+### headman_locked_door
+- Character: The Headman
+- Tür: takas
+- Zincir: mesai, 2. halka
+- Start: no, yalnızca finance_overtime DENIED ile aynı oyunda gelir
+- Says: "Mayor, my neighbor sat outside your door until five. Then the clerks locked up and went home. He only wanted to ask about the bakery trash. Can you see him tomorrow, before he tells the whole street you were hiding?"
+- DENIED: Awareness -5
+- APPROVED: Awareness +5
+- Map: yok
+
+### finance_fountain
+- Character: Minister of Finance
+- Tür: takas
+- Zincir: mesai, 2. halka
+- Start: no, yalnızca finance_overtime APPROVED ile aynı oyunda gelir
+- Says: "Mayor, the square fountain ran all night. That's drinking water, and it came out of the same account as the overtime you just signed. Shall I shut it off after dark?"
+- DENIED: Money -5
+- APPROVED: Money +5
+- Map: yok
+
+### interior_band
+- Character: Minister of Interior
+- Tür: takas
+- Zincir: bando, 1. halka
+- Says: "Mayor, the band in the square played past midnight. I have a fine ready. Sign it, and the noise stops at ten from now on."
+- DENIED: Awareness +5, Bureaucracy -5
+- APPROVED: Awareness -5, Bureaucracy +5
+- Takip: DENIED → headman_supper, aynı oyunda birkaç kart sonra gelir
+- Takip: APPROVED → opposition_band, aynı oyunda birkaç kart sonra gelir
+- Map: yok
+
+### headman_supper
+- Character: The Headman
+- Tür: takas
+- Zincir: bando, 2. halka
+- Start: no, yalnızca interior_band DENIED ile aynı oyunda gelir
+- Says: "Mayor, the neighbors are setting a long table on the street this Saturday. The band won't play unless you say the fine doesn't cover supper. Can they play until the food is gone?"
+- DENIED: Awareness -5
+- APPROVED: Awareness +5, Money -5
+- Map: yok
+
+### opposition_band
+- Character: Opposition Leader
+- Tür: zarar
+- Zincir: bando, 2. halka
+- Start: no, yalnızca interior_band APPROVED ile aynı oyunda gelir
+- Says: "Mayor, you fined the only band in town for playing past ten. Refund it, or I read your name out at tonight's council meeting as the mayor of silence."
+- DENIED: Awareness -10
+- APPROVED: Money -10
+- Map: yok
+
+### contractor_tickets
+- Character: The Contractor
+- Tür: takas
+- Zincir: ceza, 1. halka
+- Says: "Mayor, I got three tickets for parking in front of the bakery. Tear them up. I'll owe you a favor, and I always pay favors. In cash."
+- DENIED: Bureaucracy +5
+- APPROVED: Money +10, Bureaucracy -5
+- Takip: DENIED → aynı oyunda birkaç kart sonra muhalefet, cezayı toplantıya taşır
+- Takip: APPROVED → aynı oyunda birkaç kart sonra İçişleri, yırtılan makbuzların yerine yenisini ister
+- Map: yok
+
+### influencer_buns
+- Character: The Influencer
+- Tür: takas
+- Zincir: tek
+- Says: "Mayor, the bakery wants me to call their buns historic. They'll pay the town either way. Can I say it on camera for the big check? I'll only say it once. Probably."
+- DENIED: Money +5
+- APPROVED: Money +15, Awareness -10
+- Map: yok
+
+### finance_lost_found
+- Character: Minister of Finance
+- Tür: takas
+- Zincir: tek
+- Says: "Mayor, the lost-and-found is an umbrella, one shoe, and a wedding ring. Shall I auction the lot on Friday? The ring has a reserve. The shoe does not."
+- DENIED: Awareness +5
+- APPROVED: Money +10, Awareness -5
+- Map: yok
+
+### urban_moustache
+- Character: Minister of Urban Planning
+- Tür: takas
+- Zincir: tek
+- Says: "Mayor, somebody painted a moustache on the lobby statue. I can have it cleaned by Monday. This is not my job, and it is not coming off by itself. Shall I call the cleaner?"
+- DENIED: Awareness +5
+- APPROVED: Money -5, Bureaucracy +5
+- Map: yok
+
+### fool_cushion
+- Character: The Town Fool
+- Tür: deli, doğru
+- Zincir: tek
+- Says: "Mayor, the bakery cat has the only chair in the waiting room and hisses at anyone with a form. Let me put a cushion on the floor for the cat. The taxpayers can have the chair. I brought the cushion. It squeaks."
+- DENIED: etkisi yok
+- APPROVED: Awareness +5
+- Map: yok
+
 ## Son şans kartları
 
 Bir çubuk 0'a düşünce oyun hemen bitmez, eğer o çubuğun son şansını kazanmışsan. Son şans, belli kartlarda belli bir damgayı basınca o oyun için kazanılır. Kartlarda `Son şans` satırı hangi damganın hangi çubuğun son şansını verdiğini söyler.
@@ -550,6 +690,7 @@ Not: Şengör ve Üşümezsoy aynı oyunda tutulursa Chief Seismologist kartlar�
 | Üşümezsoy | seismologist_drill | APPROVED | Awareness +10, Money -10, Infrastructure +5 | Awareness +5, Money -10, Infrastructure +5 |
 | Şengör | seismologist_sensors | APPROVED | Awareness +5, Infrastructure +5 | Awareness +10, Infrastructure +5 |
 | Şengör | influencer_challenge | APPROVED | Awareness +10, Money -10 | Awareness +5, Money -10 |
+| Şengör | influencer_tractor | APPROVED | Awareness +10, Money -5 | Awareness +5, Money -5 |
 | Görür | contractor_cheap_steel | APPROVED | Money +15, Infrastructure -10, Bureaucracy -5 | Money +15, Infrastructure -5, Bureaucracy -5 |
 | Görür | urban_soil_survey | APPROVED | Money -10, Infrastructure +5, Bureaucracy +10 | Money -5, Infrastructure +5, Bureaucracy +10 |
 | Görür | urban_soil_survey | DENIED | Money +5, Bureaucracy -10 | Awareness -5, Money +5, Bureaucracy -10 |
@@ -727,4 +868,32 @@ Her kartın iki damgası ayrı satır. Anında son veren damga tabloya girmez. T
 | finance_cuts | zarar | APPROVED | 0 | -15 | 0 | 0 |
 | agency_volunteers | kazanç | DENIED | +5 | 0 | 0 | 0 |
 | agency_volunteers | kazanç | APPROVED | 0 | 0 | +5 | +5 |
-| **Toplam** | | | **+15** | **-10** | **+5** | **+10** |
+| headman_tractor | takas | DENIED | -5 | 0 | 0 | 0 |
+| headman_tractor | takas | APPROVED | +5 | -5 | 0 | 0 |
+| influencer_tractor | takas | DENIED | -5 | 0 | 0 | 0 |
+| influencer_tractor | takas | APPROVED | +10 | -5 | 0 | 0 |
+| opposition_tractor | zarar | DENIED | -10 | 0 | 0 | 0 |
+| opposition_tractor | zarar | APPROVED | 0 | -10 | 0 | 0 |
+| finance_overtime | takas | DENIED | 0 | +5 | 0 | -5 |
+| finance_overtime | takas | APPROVED | 0 | -10 | 0 | +5 |
+| headman_locked_door | takas | DENIED | -5 | 0 | 0 | 0 |
+| headman_locked_door | takas | APPROVED | +5 | 0 | 0 | 0 |
+| finance_fountain | takas | DENIED | 0 | -5 | 0 | 0 |
+| finance_fountain | takas | APPROVED | 0 | +5 | 0 | 0 |
+| interior_band | takas | DENIED | +5 | 0 | 0 | -5 |
+| interior_band | takas | APPROVED | -5 | 0 | 0 | +5 |
+| headman_supper | takas | DENIED | -5 | 0 | 0 | 0 |
+| headman_supper | takas | APPROVED | +5 | -5 | 0 | 0 |
+| opposition_band | zarar | DENIED | -10 | 0 | 0 | 0 |
+| opposition_band | zarar | APPROVED | 0 | -10 | 0 | 0 |
+| contractor_tickets | takas | DENIED | 0 | 0 | 0 | +5 |
+| contractor_tickets | takas | APPROVED | 0 | +10 | 0 | -5 |
+| influencer_buns | takas | DENIED | 0 | +5 | 0 | 0 |
+| influencer_buns | takas | APPROVED | -10 | +15 | 0 | 0 |
+| finance_lost_found | takas | DENIED | +5 | 0 | 0 | 0 |
+| finance_lost_found | takas | APPROVED | -5 | +10 | 0 | 0 |
+| urban_moustache | takas | DENIED | +5 | 0 | 0 | 0 |
+| urban_moustache | takas | APPROVED | 0 | -5 | 0 | +5 |
+| fool_cushion | deli | DENIED | 0 | 0 | 0 | 0 |
+| fool_cushion | deli | APPROVED | +5 | 0 | 0 | 0 |
+| **Toplam** | | | **0** | **-15** | **+5** | **+15** |
