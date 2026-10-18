@@ -19,7 +19,7 @@ Each meter starts at 50. Letting one fall to 0 or rise to 100 both end the run. 
 
 ## Download
 
-Windows build: [MayorsCall.zip](https://github.com/Aqelur/gamejam/releases/download/windows/MayorsCall.zip). Unzip it and run the game.
+Windows build: [MayorsCall.zip](https://github.com/Aqelur/gamejam/releases/download/windows/MayorsCall.zip) or [MayorsCall.exe](https://github.com/Aqelur/gamejam/releases/download/windows/MayorsCall.exe). Unzip the archive and run the game, or run the executable directly.
 
 ## Run the project
 
