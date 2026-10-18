@@ -155,6 +155,19 @@ var _epi := Vector3.ZERO
 var _reach := 0.0               # furthest building from the epicenter
 var _wave_dust: GPUParticles3D
 var _wave_pm: ParticleProcessMaterial
+## Footprints of every building near here, so people run out into the
+## streets and alleys instead of through walls: [{node, rect (x/z)}].
+var _blockers: Array[Dictionary] = []
+
+## People's room (tiles): how close to a wall a person's middle may get, how
+## much they keep clear of the wall they stop at, and how far they run.
+const PERSON_RADIUS := 0.07
+const WALL_GAP := 0.12
+const RUN_MIN := 1.5
+const RUN_MAX := 3.5
+## Narrower than this (tiles) and it's an alley: they run out to its middle
+## and then along it.
+const ALLEY := 1.4
 
 
 func _init() -> void:
@@ -233,6 +246,7 @@ func setup(city: Node3D, works, ending) -> bool:
 			standing += 1
 	if _plan.is_empty():
 		return false
+	_collect_blockers(city)
 
 	# the buildings round the crossroads (where the camera is) break apart in
 	# pieces; the ones near the fault tear the ground open
@@ -641,18 +655,178 @@ func _spawn_runners(e: Dictionary) -> void:
 		_runner_later(e, _rng.randf_range(0.3, 2.2))
 
 
+## Out of a door on whichever side has room, into the street, or into the
+## alley and along it; never through a wall.
 func _runner_later(e: Dictionary, delay: float) -> void:
 	await get_tree().create_timer(delay, false).timeout
 	if not is_inside_tree() or not is_instance_valid(e.b) or not e.b.visible:
 		return
-	var f: Array = _faces(e.box).pick_random()
-	var n: Vector3 = f[1]
-	var side: Vector3 = Vector3(n.z, 0, -n.x) * _rng.randf_range(-0.7, 0.7) * float(f[2])
+	var best: Array[Vector3] = []
+	var best_len := 0.0
+	var best_start := Vector3.ZERO
+	var faces := _faces(e.box)
+	for k in 8:
+		var f: Array = faces.pick_random()
+		var n: Vector3 = f[1]
+		var side: Vector3 = Vector3(n.z, 0, -n.x) * _rng.randf_range(-0.7, 0.7) * float(f[2])
+		var start: Vector3 = f[0] + side + n * (PERSON_RADIUS + 0.01) * tile
+		start.y = ground_y
+		# a door that opens straight onto the next building's wall: no good
+		if _free_run(start, n, e.b) <= 0.0:
+			continue
+		var route := _escape_route(start, n, e.b)
+		var length := _route_length(start, route)
+		if length > best_len:
+			best = route
+			best_len = length
+			best_start = start
+		if best_len >= RUN_MIN * tile:
+			break
+	if best.is_empty():
+		return
 	var p := QuakePerson.new()
 	p.scale = Vector3.ONE * PEOPLE_SCALE * tile
 	_fx.add_child(p)
-	p.start_run(f[0] + side + n * 0.06 * tile, n.rotated(Vector3.UP, _rng.randf_range(-0.6, 0.6)), ground_y)
+	p.start_run(best_start, best[0] - best_start, ground_y)
 	p.run_speed *= tile
+	p.wobble = 0.06
+	p.route = best
+
+
+## A way out from `from` (just outside a wall facing `n`, of `own`): straight
+## out into an open street, or, if it's an alley, out to its middle and then
+## along it whichever way has more room. Empty if there's no room at all.
+func _escape_route(from: Vector3, n: Vector3, own: Node, run_min := RUN_MIN, run_max := RUN_MAX) -> Array[Vector3]:
+	var want := _rng.randf_range(run_min, run_max) * tile
+	var gap := WALL_GAP * tile
+	var best: Array[Vector3] = []
+	var best_len := 0.0
+	for k in 5:
+		var d := n if k == 0 else n.rotated(Vector3.UP, _rng.randf_range(-0.5, 0.5))
+		var free := _free_run(from, d, own)
+		if free - gap <= 0.05 * tile:
+			continue
+		if free >= ALLEY * tile:
+			# open street: run out into it
+			var length := minf(free - gap, want)
+			if length > best_len:
+				best = _points([from + d * length])
+				best_len = length
+			continue
+		# an alley: out to the middle of it, then along it
+		var mid := from + d * (free * 0.5)
+		var across := n.cross(Vector3.UP).normalized()
+		for t in [across, -across]:
+			var tv: Vector3 = t
+			var along := _free_run(mid, tv, null)
+			var l2 := minf(along - gap, want)
+			if l2 > 0.0 and free * 0.5 + l2 > best_len:
+				best = _points([mid, mid + tv * l2])
+				best_len = free * 0.5 + l2
+		if best.is_empty():
+			# boxed in on both sides: at least out of the door
+			best = _points([mid])
+			best_len = free * 0.5
+	return best
+
+
+static func _points(a: Array) -> Array[Vector3]:
+	var out: Array[Vector3] = []
+	for q in a:
+		out.append(q as Vector3)
+	return out
+
+
+func _route_length(from: Vector3, route: Array[Vector3]) -> float:
+	var length := 0.0
+	var at := from
+	for q in route:
+		length += _flat(q).distance_to(_flat(at))
+		at = q
+	return length
+
+
+## How far a person can run from `from` along `dir` before their shoulder
+## meets a building (skipping `skip`, the one they came out of). 0 if they'd
+## start inside one; INF if nothing is in the way.
+func _free_run(from: Vector3, dir: Vector3, skip: Node) -> float:
+	var o := _flat(from)
+	var d := _flat(dir).normalized()
+	var grow := PERSON_RADIUS * tile
+	var best := INF
+	for bl in _blockers:
+		if bl.node == skip:
+			continue
+		var r: Rect2 = (bl.rect as Rect2).grow(grow)
+		best = minf(best, _ray_rect(o, d, r))
+		if best <= 0.0:
+			return 0.0
+	return best
+
+
+## Distance along the ray `o` + `d` * t to rectangle `r` (0 if it starts
+## inside, INF if it misses).
+static func _ray_rect(o: Vector2, d: Vector2, r: Rect2) -> float:
+	var tmin := -INF
+	var tmax := INF
+	for axis in 2:
+		var oa := o[axis]
+		var da := d[axis]
+		var lo := r.position[axis]
+		var hi := r.end[axis]
+		if absf(da) < 0.000001:
+			if oa < lo or oa > hi:
+				return INF
+		else:
+			var t1 := (lo - oa) / da
+			var t2 := (hi - oa) / da
+			tmin = maxf(tmin, minf(t1, t2))
+			tmax = minf(tmax, maxf(t1, t2))
+	if tmax < maxf(tmin, 0.0):
+		return INF
+	return maxf(tmin, 0.0)
+
+
+## The footprint of every standing building within reach of `focus`, in every
+## district (the quarter's neighbours are in the way too). Only the parts that
+## stand up count, not flat lots and pavements.
+func _collect_blockers(city: Node3D, reach_tiles := 40.0) -> void:
+	_blockers.clear()
+	var districts := city.get_node_or_null("Districts") if city else null
+	if districts == null:
+		return
+	var reach := reach_tiles * tile
+	for d in districts.get_children():
+		var root := d.get_node_or_null("Buildings")
+		if root == null:
+			continue
+		for c in root.get_children():
+			var b := c as Node3D
+			if b == null or not b.is_visible_in_tree():
+				continue
+			if _flat(b.global_position).distance_to(_flat(focus)) > reach:
+				continue
+			# a civic lot (buildable.gd): only the building that's gone up on it
+			if b.has_method("is_built"):
+				if not b.is_built():
+					continue
+				var rise := b.get_node_or_null("Rise") as Node3D
+				if rise:
+					b = rise
+			var first := true
+			var rect := Rect2()
+			for v in b.find_children("*", "VisualInstance3D", true, false):
+				var vi := v as VisualInstance3D
+				if not vi.is_visible_in_tree():
+					continue
+				var bb: AABB = vi.global_transform * vi.get_aabb()
+				if bb.size.y < 0.15 * tile:
+					continue
+				var r2 := Rect2(bb.position.x, bb.position.z, bb.size.x, bb.size.z)
+				rect = r2 if first else rect.merge(r2)
+				first = false
+			if not first:
+				_blockers.append({"node": b, "rect": rect})
 
 
 ## People leap from the windows of a DAMAGED building.
@@ -671,23 +845,59 @@ func _jumper_later(e: Dictionary, delay: float) -> void:
 	if not is_inside_tree() or not is_instance_valid(e.b) or not e.b.visible:
 		return
 	var box: AABB = e.box
-	var f: Array = _faces(box).pick_random()
-	var n: Vector3 = f[1]
-	var pos: Vector3 = f[0] + Vector3(n.z, 0, -n.x) * _rng.randf_range(-0.7, 0.7) * f[2]
+	# the window on the side with the most room below it
+	var best_f: Array = []
+	var best_pos := Vector3.ZERO
+	var best_free := -1.0
+	for face in _faces(box):
+		var f: Array = face
+		var fn: Vector3 = f[1]
+		var at: Vector3 = f[0] + Vector3(fn.z, 0, -fn.x) * _rng.randf_range(-0.7, 0.7) * f[2]
+		var free := _free_run(Vector3(at.x, ground_y, at.z) + fn * (PERSON_RADIUS + 0.01) * tile, fn, e.b)
+		if free > best_free:
+			best_free = free
+			best_f = f
+			best_pos = at
+	if best_free <= 0.0:
+		return
+	var n: Vector3 = best_f[1]
+	var pos := best_pos
 	pos.y = box.position.y + box.size.y * _rng.randf_range(0.3, 0.7)
 	var g := QuakeFX.glass(_fx, Transform3D(QuakeFX.facing(n), pos + n * 0.03 * tile), Vector2(0.08, 0.08) * tile, _q(14), 1.4)
 	_grow(g, GLASS_SIZE)
 	var p := QuakePerson.new()
 	p.scale = Vector3.ONE * PEOPLE_SCALE * tile
 	_fx.add_child(p)
-	var v := n * _rng.randf_range(0.6, 1.1) + Vector3.UP * _rng.randf_range(0.6, 1.2)
-	p.start_jump(pos + n * 0.03 * tile, v * tile, ground_y)
-	p.gravity *= tile
+	var v := (n * _rng.randf_range(0.6, 1.1) + Vector3.UP * _rng.randf_range(0.6, 1.2)) * tile
+	# don't let the leap carry them into the building across the alley
+	var g_acc := p.gravity * tile
+	var drop := maxf(0.0, pos.y - ground_y)
+	var air := (v.y + sqrt(v.y * v.y + 2.0 * g_acc * drop)) / g_acc
+	var reach := Vector2(v.x, v.z).length() * air
+	var room := best_free - WALL_GAP * tile
+	if reach > room:
+		var k := maxf(0.0, room) / maxf(reach, 0.001)
+		v.x *= k
+		v.z *= k
+	p.start_jump(pos + n * (PERSON_RADIUS + 0.01) * tile, v, ground_y)
+	p.gravity = g_acc
+	p.set_meta("face", n)
+	p.set_meta("from", e.b)
 	p.landed.connect(_on_landed)
 
 
 func _on_landed(p: QuakePerson) -> void:
 	_dust(p.global_position + Vector3.UP * 0.02 * tile, 0.03 * tile, 6, 0.12, 1.2, 0.15, 0.3, true)
+	# where to run once they're up: the street or along the alley
+	var n: Vector3 = p.get_meta("face", Vector3.FORWARD)
+	var own: Node = p.get_meta("from", null)
+	var at := p.position
+	at.y = ground_y
+	var route := _escape_route(at, n, own)
+	if route.is_empty():
+		route = _points([at])   # nowhere to go: stay put and wave
+	p.wobble = 0.06
+	p.route = route
 	# QuakePerson picks a new (small-scene) running speed as it gets back up
 	await get_tree().create_timer(0.95, false).timeout
 	if is_instance_valid(p):

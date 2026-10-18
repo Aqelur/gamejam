@@ -350,8 +350,9 @@ func show_summary() -> void:
 ## mean?" on black. Then Central Park, one body on the grass under a black
 ## blanket, and the camera pulls back as more are laid down beside it, 4, 9,
 ## 16... faster and faster until all `total` of them lie there
-## (park_memorial.gd), and last a slow pull-back over the whole memorial.
-## Returns the counter overlay. `summary` (the card on black) is freed
+## (park_memorial.gd); then it tells the player whose fault it was, over
+## the wrecked city and the memorial (_blame).
+## Returns the overlay it built. `summary` (the card on black) is freed
 ## once the words cover it. The closing lines follow that picture.
 func _show_weight(total: int, summary: Control) -> Control:
 	var screen := ColorRect.new()
@@ -508,18 +509,134 @@ func _show_weight(total: int, summary: Control) -> Control:
 	place.call(float(all), 0.0)
 	count.text = thousands(total)
 	await get_tree().create_timer(0.9).timeout
-	# then the slow last pull-back: the whole memorial round them
-	var from_eye := _cam.global_position
-	var from_look: Vector3 = field.frame(float(all), aspect, fov)[1]
-	var wide: Array = field.frame_all(aspect, fov)
 	t = create_tween()
-	t.tween_method(func(k: float) -> void:
-		_cam.look_at_from_position(from_eye.lerp(wide[0], k), from_look.lerp(wide[1], k), Vector3.UP), 0.0, 1.0, 5.0) \
-		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	t.parallel().tween_property(lost, "modulate:a", 1.0, 1.2).set_delay(1.8)
-	t.tween_interval(2.6)
+	t.tween_property(lost, "modulate:a", 1.0, 1.2)
+	t.tween_interval(2.4)
 	await t.finished
+
+	# --- and then what it was for
+	await _blame(over, counter, total, field, aspect, fov)
 	return over
+
+
+## The last words, to the player, in order:
+##   1. over the dead, darkened: "N people trusted you, Mayor." (and, only if
+##      every safety proposal was signed, "You did what you could...")
+##   2. the dark lifts and the camera rises slowly over the whole wrecked city
+##   3. over the city: "You were the Mayor." / "This was your city."
+##   4. the camera comes down onto the memorial round the dead
+##   5. "They don't get another chance. You do."
+func _blame(over: Control, counter: Control, total: int, field: ParkShrouds,
+		aspect: float, fov: float) -> void:
+	var dim := ColorRect.new()
+	dim.name = "Blame"
+	dim.color = Color(0.0, 0.0, 0.01, 0.0)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	over.add_child(dim)
+	var centre := CenterContainer.new()
+	centre.set_anchors_preset(Control.PRESET_FULL_RECT)
+	centre.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	over.add_child(centre)
+	var has_cam := field != null and is_instance_valid(_cam)
+
+	# --- 1. over the dead
+	var t := create_tween().set_parallel()
+	t.tween_property(dim, "color:a", 0.78, 3.0)
+	t.tween_property(counter, "modulate:a", 0.0, 2.0)
+	await t.finished
+	await _say(centre, [
+		["%s people trusted you, Mayor." % thousands(total), Color.WHITE, 34]], true)
+	if _all_safety_approved():
+		await _say(centre, [["You did what you could.", SOFT, 26],
+			["It was still not enough for them.", SOFT, 26]], true)
+
+	# --- 2. the dark lifts and the camera rises slowly over the wrecked city
+	if has_cam:
+		var from_eye := _cam.global_position
+		var from_look: Vector3 = field.frame(float(field.count), aspect, fov)[1]
+		var high: Array = field.frame_city(aspect, fov)
+		t = create_tween().set_parallel()
+		t.tween_property(dim, "color:a", 0.0, 3.5)
+		t.tween_method(func(k: float) -> void:
+			_cam.look_at_from_position(from_eye.lerp(high[0], k), from_look.lerp(high[1], k), Vector3.UP), 0.0, 1.0, 12.0) \
+			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+		await t.finished
+		await get_tree().create_timer(1.0).timeout
+
+	# --- 3. over the city
+	t = create_tween()
+	t.tween_property(dim, "color:a", 0.35, 1.2)
+	await t.finished
+	var blame_box := await _say(centre, [
+		["You were the Mayor.", Color.WHITE, 36],
+		["This was your city.", RED, 44]], false)
+	await get_tree().create_timer(2.0).timeout
+
+	# --- 4. down onto the memorial
+	t = create_tween().set_parallel()
+	t.tween_property(blame_box, "modulate:a", 0.0, 1.6)
+	t.tween_property(dim, "color:a", 0.0, 2.0).set_delay(0.4)
+	if has_cam:
+		var city_eye := _cam.global_position
+		var city_look: Vector3 = field.frame_city(aspect, fov)[1]
+		var mem: Array = field.frame_all(aspect, fov)
+		t.tween_method(func(k: float) -> void:
+			_cam.look_at_from_position(city_eye.lerp(mem[0], k), city_look.lerp(mem[1], k), Vector3.UP), 0.0, 1.0, 9.0) \
+			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	await t.finished
+	blame_box.queue_free()
+	await get_tree().create_timer(1.2).timeout
+
+	# --- 5. one quiet line under it all
+	var after := _label("They don't get another chance. You do.", _font_bold, 26, Color.WHITE)
+	after.anchor_right = 1.0
+	after.anchor_top = 0.86
+	after.anchor_bottom = 0.86
+	after.grow_vertical = Control.GROW_DIRECTION_BOTH
+	after.modulate.a = 0.0
+	over.add_child(after)
+	t = create_tween()
+	t.tween_property(after, "modulate:a", 1.0, 1.4)
+	t.tween_interval(1.4)
+	await t.finished
+
+
+## Lines in the middle of the screen, one after another: each [text, colour,
+## size]. With `fade_out` they go again after a pause; otherwise they stay and
+## the box is returned for the caller to clear.
+func _say(centre: Control, specs: Array, fade_out: bool) -> Control:
+	var box := VBoxContainer.new()
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_theme_constant_override("separation", 16)
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	centre.add_child(box)
+	var t := create_tween()
+	for spec in specs:
+		var l := _label(String(spec[0]), _font_black if int(spec[2]) >= 34 else _font_bold, int(spec[2]), spec[1])
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l.custom_minimum_size.x = 1100
+		l.modulate.a = 0.0
+		box.add_child(l)
+		t.tween_property(l, "modulate:a", 1.0, 1.1)
+		t.tween_interval(0.9 + 0.035 * l.text.length())
+	if fade_out:
+		t.tween_interval(1.6)
+		t.tween_property(box, "modulate:a", 0.0, 1.0)
+	await t.finished
+	if fade_out:
+		box.queue_free()
+	return box
+
+
+## True if the player signed every proposal that would have saved lives.
+func _all_safety_approved() -> bool:
+	for id in ["seismologist_warning", "seismologist_drill", "urban_timber_bracing",
+			"interior_inspectors", "health_hospital", "agency_fire_station",
+			"agency_park_tents", "interior_police"]:
+		if not approved(id):
+			return false
+	return true
 
 
 func _reveal_line(line: CanvasItem, fade: float, hold: float) -> void:
@@ -559,6 +676,7 @@ func _open_outro(cover: Control) -> void:
 	if is_instance_valid(_bed):
 		_bed.stop()
 	get_tree().change_scene_to_file("res://menu/story_outro.tscn")
+
 
 
 # ================================================================ sound

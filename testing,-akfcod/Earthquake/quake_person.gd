@@ -22,6 +22,12 @@ var gravity := 5.0
 var run_dir := Vector3.FORWARD
 var run_speed := 0.55
 var run_time := 4.0
+## Optional: points (in the parent's space) to run through in order, e.g. out
+## of a door and along an alley. While it has points the person follows them
+## (ignoring run_time) and stops to wave at the last one.
+var route: Array[Vector3] = []
+## How far (radians) the run zig-zags either side of its heading.
+var wobble := 0.25
 
 var _state_t := 0.0
 var _phase := 0.0
@@ -108,8 +114,22 @@ func _process(delta: float) -> void:
 				run_time = randf_range(2.0, 4.5)
 				_enter(State.RUN)
 		State.RUN:
+			var on_route := not route.is_empty()
+			if on_route:
+				var to := route[0] - position
+				to.y = 0.0
+				if to.length() <= run_speed * delta * 1.5:
+					route.remove_at(0)
+					if route.is_empty():
+						_enter(State.PANIC)
+						return
+					to = route[0] - position
+					to.y = 0.0
+				if to.length() > 0.0001:
+					run_dir = to.normalized()
+					_yaw = atan2(-run_dir.x, -run_dir.z)
 			# a little zig-zag so crowds don't move in straight lines
-			var dir := run_dir.rotated(Vector3.UP, sin(t * 1.7) * 0.25)
+			var dir := run_dir.rotated(Vector3.UP, sin(t * 1.7) * wobble)
 			position += dir * run_speed * delta
 			position.y = ground_y
 			var stride := t * 16.0
@@ -119,7 +139,7 @@ func _process(delta: float) -> void:
 			_leg_r.rotation.x = -sin(stride) * 0.9
 			_arm_l.rotation = Vector3(-sin(stride) * 1.0, 0, 0.15)
 			_arm_r.rotation = Vector3(sin(stride) * 1.0, 0, -0.15)
-			if _state_t > run_time:
+			if not on_route and _state_t > run_time:
 				_enter(State.PANIC)
 		State.PANIC:
 			# stop, turn around and wave arms overhead
