@@ -29,7 +29,7 @@ extends Node
 ##                              end can lay the dead out in Central Park
 
 ## When the quake hits, in seconds after midnight.
-const ParkShrouds := preload("res://PresidentRoom/park_shrouds.gd")
+const ParkShrouds := preload("res://PresidentRoom/park_memorial.gd")
 
 const QUAKE_TIME := 14 * 3600 + 32 * 60
 const MAGNITUDE := 7.4
@@ -313,7 +313,10 @@ func show_summary() -> void:
 ## mean?" on black. Then Central Park, one body on the grass under a black
 ## blanket, and the camera pulls back as more are laid down beside it, 4, 9,
 ## 16... faster and faster until all `total` of them lie there
-## (park_shrouds.gd). Returns the overlay it built (the counter on it), for
+## (park_memorial.gd), and last a slow pull-back over the whole memorial,
+## then the dark comes down and it tells the player whose fault it was
+## (_blame).
+## Returns the overlay it built (the counter on it), for
 ## the "click to start again" line. `summary` (the card on black) is freed
 ## once the words cover it.
 func _show_weight(total: int, summary: Control) -> Control:
@@ -398,7 +401,7 @@ func _show_weight(total: int, summary: Control) -> Control:
 	counter.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	over.add_child(counter)
 	var count := _label("1", _font_black, 72, RED)
-	var lost := _label("PEOPLE LOST", _spaced(_font_bold, 6), 22, SOFT)
+	var lost := _label("PEOPLE WHO TRUSTED YOU", _spaced(_font_bold, 6), 22, SOFT)
 	count.modulate.a = 0.0
 	lost.modulate.a = 0.0
 	counter.add_child(count)
@@ -466,11 +469,123 @@ func _show_weight(total: int, summary: Control) -> Control:
 	# --- all of them
 	count.text = thousands(total)
 	await get_tree().create_timer(0.9).timeout
+	# then the slow last pull-back: the whole memorial round them
+	var from_eye := _cam.global_position
+	var from_look: Vector3 = field.frame(float(all), aspect, fov)[1]
+	var wide: Array = field.frame_all(aspect, fov)
 	t = create_tween()
-	t.tween_property(lost, "modulate:a", 1.0, 1.0)
-	t.tween_interval(2.2)
+	t.tween_method(func(k: float) -> void:
+		_cam.look_at_from_position(from_eye.lerp(wide[0], k), from_look.lerp(wide[1], k), Vector3.UP), 0.0, 1.0, 5.0) \
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	t.parallel().tween_property(lost, "modulate:a", 1.0, 1.2).set_delay(1.8)
+	t.tween_interval(2.6)
 	await t.finished
+
+	# --- and then, over the memorial, what it was for
+	await _blame(over, counter, total, field, aspect, fov)
 	return over
+
+
+## The last words, to the player: the dark comes down over the memorial and,
+## a few lines at a time, it tells them whose fault this was. Then the dark
+## lifts and the camera rises slowly from the memorial over the wrecked city,
+## and one last line comes up.
+func _blame(over: Control, counter: Control, total: int, field: ParkShrouds,
+		aspect: float, fov: float) -> void:
+	var dim := ColorRect.new()
+	dim.name = "Blame"
+	dim.color = Color(0.0, 0.0, 0.01, 0.0)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	over.add_child(dim)
+	var t := create_tween().set_parallel()
+	t.tween_property(dim, "color:a", 0.78, 3.0)
+	t.tween_property(counter, "modulate:a", 0.0, 2.0)
+	await t.finished
+
+	var groups: Array = []
+	groups.append([
+		["%s people trusted you, Mayor." % thousands(total), Color.WHITE, 34],
+		["They went to work. They picked their children up from school.", SOFT, 24],
+		["They thought someone was watching over them.", SOFT, 24]])
+	if _all_safety_approved():
+		groups.append([["You did what you could.", SOFT, 26], ["It was still not enough for them.", SOFT, 26]])
+	groups.append([
+		["You were the Mayor.", Color.WHITE, 36],
+		["This was your city.", RED, 44]])
+
+	var centre := CenterContainer.new()
+	centre.set_anchors_preset(Control.PRESET_FULL_RECT)
+	centre.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	over.add_child(centre)
+	var last_box: Control = null
+	for gi in groups.size():
+		var box := VBoxContainer.new()
+		box.alignment = BoxContainer.ALIGNMENT_CENTER
+		box.add_theme_constant_override("separation", 16)
+		box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		centre.add_child(box)
+		var lines: Array[Label] = []
+		for spec in groups[gi]:
+			var l := _label(String(spec[0]), _font_black if int(spec[2]) >= 34 else _font_bold, int(spec[2]), spec[1])
+			l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			l.custom_minimum_size.x = 1100
+			l.modulate.a = 0.0
+			box.add_child(l)
+			lines.append(l)
+		t = create_tween()
+		for l in lines:
+			t.tween_property(l, "modulate:a", 1.0, 1.1)
+			t.tween_interval(0.9 + 0.035 * l.text.length())
+		var last := gi == groups.size() - 1
+		t.tween_interval(1.6 if not last else 0.8)
+		if not last:
+			t.tween_property(box, "modulate:a", 0.0, 1.0)
+		await t.finished
+		if not last:
+			box.queue_free()
+		last_box = box
+
+	# --- the dark lifts and the camera rises slowly over the wrecked city
+	if field and is_instance_valid(_cam):
+		var from_eye := _cam.global_position
+		var from_look: Vector3 = field.frame_all(aspect, fov)[1]
+		var high: Array = field.frame_city(aspect, fov)
+		t = create_tween().set_parallel()
+		t.tween_property(last_box, "modulate:a", 0.0, 1.6)
+		t.tween_property(dim, "color:a", 0.0, 3.5).set_delay(0.6)
+		t.tween_method(func(k: float) -> void:
+			_cam.look_at_from_position(from_eye.lerp(high[0], k), from_look.lerp(high[1], k), Vector3.UP), 0.0, 1.0, 11.0) \
+			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+		await t.finished
+		await get_tree().create_timer(0.8).timeout
+	else:
+		t = create_tween()
+		t.tween_property(last_box, "modulate:a", 0.0, 1.6)
+		await t.finished
+
+	# and one quiet line under it all
+	var after := _label("They don't get another chance. You do.", _font_bold, 26, Color.WHITE)
+	after.anchor_right = 1.0
+	after.anchor_top = 0.86
+	after.anchor_bottom = 0.86
+	after.grow_vertical = Control.GROW_DIRECTION_BOTH
+	after.modulate.a = 0.0
+	over.add_child(after)
+	t = create_tween()
+	t.tween_property(after, "modulate:a", 1.0, 1.4)
+	t.tween_interval(1.4)
+	await t.finished
+
+
+## True if the player signed every proposal that would have saved lives.
+func _all_safety_approved() -> bool:
+	for id in ["seismologist_warning", "seismologist_drill", "urban_timber_bracing",
+			"interior_inspectors", "health_hospital", "agency_fire_station",
+			"agency_park_tents", "interior_police"]:
+		if not approved(id):
+			return false
+	return true
 
 
 # ================================================================ sound

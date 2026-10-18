@@ -4,9 +4,11 @@ extends Node3D
 ## blanket. The camera starts on one of them and pulls back, 4, 9, 16...
 ## until all of them lie there.
 ##
-## The park is cleared for this: the trees and everything else in the city are
-## hidden, and the bodies lie on a plain green field. They lie vertically on
-## screen (head away from the camera, feet towards it), side by side in rows.
+## The park is cleared for this: everything in the city is hidden, and the
+## bodies lie on a plain green lawn. They lie vertically on screen (head away
+## from the camera, feet towards it), side by side in rows. Round the bodies
+## runs a gravel path with benches and lamps, and the empty grass beyond is
+## filled with trees and bushes (_decorate).
 ## If there are more dead than fit, the rows close up and the bodies get
 ## smaller until they all do. The bodies are one MultiMesh, so thousands cost
 ## almost nothing.
@@ -28,6 +30,12 @@ const BLANKET := Color(0.035, 0.035, 0.042)
 const GRASS := Color(0.33, 0.55, 0.24)
 ## How far the plain green field reaches, park units.
 const FIELD_SIZE := 600.0
+const TREE_ROUND := preload("res://Models/Custom/tree_round.glb")
+const TREE_CONE := preload("res://Models/Custom/tree_cone.glb")
+const BENCH := preload("res://Models/Custom/bench.glb")
+const LAMP := preload("res://Models/Custom/streetlight.glb")
+const GRAVEL := Color(0.74, 0.69, 0.58)
+const BUSH := Color(0.2, 0.42, 0.17)
 ## Body size in park units, before any shrinking.
 const LENGTH := 0.2
 const WIDTH := 0.092
@@ -83,6 +91,7 @@ func setup(city: Node3D, total: int) -> bool:
 		var b := Rect2(Vector2(s.x, s.z) - half, half * 2.0)
 		r = b if i == 0 else r.merge(b)
 		_bounds[i] = r
+	_decorate(_bounds[count - 1])
 
 	_base.resize(count)
 	for i in count:
@@ -167,6 +176,167 @@ func _add_field() -> void:
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mi.position = Vector3(START.x, LAWN_Y, START.y)
 	_rig.add_child(mi)
+
+
+# ================================================================ the park round them
+
+## Fill the empty grass round the bodies (`full`, their bounds): a gravel path
+## close round them with benches and lamps facing in, then trees and bushes out
+## to well past the edge of the picture. All MultiMeshes, so it stays cheap.
+func _decorate(full: Rect2) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7741
+	var edge := full.grow(0.35 + 0.15 * _size)
+
+	# --- the path: four gravel strips just round the bodies
+	var path := edge.grow(0.15)
+	var w := 0.22
+	var strips: Array[Rect2] = [
+		Rect2(path.position.x - w * 0.5, path.position.y - w * 0.5, path.size.x + w, w),
+		Rect2(path.position.x - w * 0.5, path.end.y - w * 0.5, path.size.x + w, w),
+		Rect2(path.position.x - w * 0.5, path.position.y + w * 0.5, w, path.size.y - w),
+		Rect2(path.end.x - w * 0.5, path.position.y + w * 0.5, w, path.size.y - w)]
+	var gravel := StandardMaterial3D.new()
+	gravel.albedo_color = GRAVEL
+	gravel.roughness = 1.0
+	for st in strips:
+		var box := BoxMesh.new()
+		box.size = Vector3(st.size.x, 0.006, st.size.y)
+		box.material = gravel
+		var mi := MeshInstance3D.new()
+		mi.name = "Path"
+		mi.mesh = box
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var c := st.get_center()
+		mi.position = Vector3(c.x, LAWN_Y + 0.003, c.y)
+		_rig.add_child(mi)
+
+	# --- benches and lamps along the outside of the path, facing the bodies
+	var benches: Array[Transform3D] = []
+	var lamps: Array[Transform3D] = []
+	var line := path.grow(0.28)
+	var perimeter := 2.0 * (line.size.x + line.size.y)
+	var step := maxf(1.6, perimeter / 90.0)
+	# [start, end, the way the bench faces]
+	var sides := [
+		[line.position, Vector2(line.end.x, line.position.y), Vector2(0, 1)],               # north
+		[Vector2(line.position.x, line.end.y), line.end, Vector2(0, -1)],                   # south
+		[line.position, Vector2(line.position.x, line.end.y), Vector2(1, 0)],               # west
+		[Vector2(line.end.x, line.position.y), line.end, Vector2(-1, 0)]]                   # east
+	for side in sides:
+		var a: Vector2 = side[0]
+		var b: Vector2 = side[1]
+		var face: Vector2 = side[2]
+		var yaw := atan2(face.x, face.y)
+		var n := maxi(1, floori(a.distance_to(b) / step))
+		for k in n + 1:
+			var q := a.lerp(b, float(k) / n)
+			var xf := Transform3D(Basis(Vector3.UP, yaw), Vector3(q.x, LAWN_Y, q.y))
+			if k == 0 or k == n:
+				continue   # the corners get lamps below
+			if k % 2 == 0:
+				lamps.append(xf)
+			else:
+				benches.append(xf)
+	for corner in [line.position, Vector2(line.end.x, line.position.y), Vector2(line.position.x, line.end.y), line.end]:
+		lamps.append(Transform3D(Basis.IDENTITY, Vector3(corner.x, LAWN_Y, corner.y)))
+
+	# --- trees and bushes on all the empty grass beyond
+	var keep_out := line.grow(0.45)
+	var reach := maxf(7.0, maxf(full.size.x, full.size.y) * 0.9)
+	var outer := line.grow(reach)
+	var cell := maxf(0.55, reach / 22.0)
+	var round_trees: Array[Transform3D] = []
+	var cone_trees: Array[Transform3D] = []
+	var bushes: Array[Transform3D] = []
+	var x := outer.position.x
+	while x < outer.end.x:
+		var z := outer.position.y
+		while z < outer.end.y:
+			var p := Vector2(x, z) + Vector2(rng.randf_range(-0.4, 0.4), rng.randf_range(-0.4, 0.4)) * cell
+			z += cell
+			if keep_out.has_point(p):
+				continue
+			var roll := rng.randf()
+			if roll < 0.5:
+				var sc := rng.randf_range(0.85, 1.4)
+				var xf := Transform3D(Basis(Vector3.UP, rng.randf_range(0.0, TAU))
+					.scaled(Vector3(sc, sc * rng.randf_range(0.9, 1.1), sc)), Vector3(p.x, LAWN_Y, p.y))
+				if rng.randf() < 0.6:
+					round_trees.append(xf)
+				else:
+					cone_trees.append(xf)
+			elif roll < 0.72:
+				# a little clump of one to three bushes
+				for b in rng.randi_range(1, 3):
+					var o := p + Vector2(rng.randf_range(-0.12, 0.12), rng.randf_range(-0.12, 0.12))
+					var sc := rng.randf_range(0.7, 1.25)
+					bushes.append(Transform3D(Basis(Vector3.UP, rng.randf_range(0.0, TAU))
+						.scaled(Vector3(sc, sc * rng.randf_range(0.7, 0.95), sc)), Vector3(o.x, LAWN_Y, o.y)))
+		x += cell
+
+	_scatter(TREE_ROUND, round_trees, "TreesRound")
+	_scatter(TREE_CONE, cone_trees, "TreesCone")
+	_scatter(BENCH, benches, "Benches")
+	_scatter(LAMP, lamps, "Lamps")
+	_scatter_mesh(_bush_mesh(), null, Transform3D.IDENTITY, bushes, "Bushes")
+
+
+## One MultiMesh per mesh in `scene`, an instance of it at every `xforms`.
+func _scatter(scene: PackedScene, xforms: Array[Transform3D], label: String) -> void:
+	if xforms.is_empty() or scene == null:
+		return
+	var root := scene.instantiate()
+	var parts: Array = root.find_children("*", "MeshInstance3D", true, false)
+	if root is MeshInstance3D:
+		parts.append(root)
+	for part in parts:
+		var mi := part as MeshInstance3D
+		if mi.mesh == null:
+			continue
+		# where the part sits inside the model
+		var local := Transform3D.IDENTITY
+		if mi != root:
+			local = mi.transform
+			var up := mi.get_parent()
+			while up != null and up != root:
+				if up is Node3D:
+					local = (up as Node3D).transform * local
+				up = up.get_parent()
+		_scatter_mesh(mi.mesh, mi.material_override, local, xforms, label)
+	root.free()
+
+
+func _scatter_mesh(mesh: Mesh, mat: Material, local: Transform3D, xforms: Array[Transform3D], label: String) -> void:
+	if xforms.is_empty():
+		return
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = mesh
+	mm.instance_count = xforms.size()
+	for i in xforms.size():
+		mm.set_instance_transform(i, xforms[i] * local)
+	var mmi := MultiMeshInstance3D.new()
+	mmi.name = label
+	mmi.multimesh = mm
+	if mat:
+		mmi.material_override = mat
+	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	_rig.add_child(mmi)
+
+
+## A low, round, low-poly bush.
+func _bush_mesh() -> Mesh:
+	var sphere := SphereMesh.new()
+	sphere.radius = 0.11
+	sphere.height = 0.2
+	sphere.radial_segments = 8
+	sphere.rings = 4
+	var m := StandardMaterial3D.new()
+	m.albedo_color = BUSH
+	m.roughness = 1.0
+	sphere.material = m
+	return sphere
 
 
 # ================================================================ layout
