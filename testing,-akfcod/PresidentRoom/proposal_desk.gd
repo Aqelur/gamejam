@@ -21,6 +21,13 @@ signal stamped(approved: bool)
 ## off it / was put down (-1). The room shows which stats it would touch.
 signal aim_changed(choice: int)
 
+## Stamp hit, same clip for APPROVED (green) and DENIED (red).
+const STAMP_SOUND := "res://PresidentRoom/audio/stamp.wav"
+## The sheet sliding onto the pad when a proposal is handed over.
+## Pixabay, OxidVideos. The file is already a quiet sheet, so it plays at 0 dB.
+const PAPER_SOUND := "res://assets/audio/office/paper_slide.mp3"
+const PAPER_DB := 0.0
+
 const DESK_TOP := 0.78
 ## Height the held stamp floats at, above the desk.
 const HOLD_Y := DESK_TOP + 0.09
@@ -41,6 +48,7 @@ var _busy := false           # a stamp is slamming down or flying home
 var _paper_tween: Tween
 var _shake_tween: Tween
 var _aim := -1
+var _paper_player: AudioStreamPlayer
 
 
 func setup(p_room) -> void:
@@ -64,6 +72,7 @@ func present() -> void:
 	_paper_tween = create_tween().set_parallel().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	_paper_tween.tween_property(paper, "position", home, 0.55)
 	_paper_tween.tween_property(paper, "rotation_degrees", Vector3(0, room.PAPER_YAW, 0), 0.55)
+	_play_paper()
 
 
 ## Take the stamped paper off the desk.
@@ -155,7 +164,10 @@ func _drop() -> void:
 	Input.set_default_cursor_shape(Input.CURSOR_ARROW)
 	var spot := Vector3(s.position.x, 0, s.position.z)
 	if has_proposal and room.paper.visible and _over_paper(spot):
-		_slam(s, spot)
+		if bool(s.get_meta("approved")) and _approve_blocked():
+			_refuse(s)
+		else:
+			_slam(s, spot)
 	else:
 		_fly_home(s)
 
@@ -177,6 +189,7 @@ func _slam(s: Node3D, spot: Vector3) -> void:
 	t.tween_callback(func() -> void:
 		_ink(spot, approved)
 		_shake()
+		_play_stamp()
 		stamped.emit(approved))
 	# press, lift, home
 	t.tween_property(s, "position", down + Vector3(0, -0.002, 0), 0.12)
@@ -186,6 +199,27 @@ func _slam(s: Node3D, spot: Vector3) -> void:
 	t.tween_callback(func() -> void: _busy = false)
 	# let the ink be seen for a moment, then the paper goes
 	get_tree().create_timer(0.9).timeout.connect(_remove_paper.bind(approved))
+
+
+## Green stamp over a paper that would spend the last of the money: no ink,
+## the paper stays, the stamp wobbles and goes back to its spot.
+func _refuse(s: Node3D) -> void:
+	_busy = true
+	_set_aim(-1)
+	var spot := s.position
+	var home: Vector3 = s.get_meta("home")
+	var t := create_tween()
+	t.tween_property(s, "position", spot + Vector3(0, 0.035, 0), 0.06)
+	t.tween_property(s, "position", spot + Vector3(0.014, 0.01, 0), 0.05)
+	t.tween_property(s, "position", spot + Vector3(-0.014, 0.02, 0), 0.05)
+	t.tween_property(s, "position", home, 0.28).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
+	t.parallel().tween_property(s, "rotation", Vector3.ZERO, 0.28)
+	t.tween_callback(func() -> void: _busy = false)
+
+
+func _approve_blocked() -> bool:
+	var cycle = room.day_cycle
+	return cycle != null and cycle.has_method("approve_blocked") and cycle.approve_blocked()
 
 
 func _fly_home(s: Node3D) -> void:
@@ -251,6 +285,33 @@ func _flat_bar(parent: Node3D, size: Vector3, pos: Vector3, m: Material) -> void
 	mi.position = pos
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	parent.add_child(mi)
+
+
+func _play_stamp() -> void:
+	if not ResourceLoader.exists(STAMP_SOUND):
+		return
+	var stream := load(STAMP_SOUND) as AudioStream
+	if stream == null:
+		return
+	var p := AudioStreamPlayer.new()
+	p.stream = stream
+	add_child(p)
+	p.finished.connect(p.queue_free)
+	p.play()
+
+
+func _play_paper() -> void:
+	if _paper_player == null:
+		if not ResourceLoader.exists(PAPER_SOUND):
+			return
+		var stream := load(PAPER_SOUND) as AudioStream
+		if stream == null:
+			return
+		_paper_player = AudioStreamPlayer.new()
+		_paper_player.stream = stream
+		_paper_player.volume_db = PAPER_DB
+		add_child(_paper_player)
+	_paper_player.play()
 
 
 func _shake() -> void:

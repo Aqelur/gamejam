@@ -60,8 +60,9 @@ extends Node3D
 ##
 ## Real proposals live in PresidentRoom/proposals/*.tres (proposal_data.gd).
 ## While a stamp is held over one, a small crystal floats above each stat it
-## would change (not which way or by how much). Once the stamp lands, each
-## crystal turns into a green up / red down arrow and the liquid in the icon
+## would change. The crystal grows with the size of that change (5 small,
+## 10 the usual size, 15 and up larger) and does not say which way. Once the
+## stamp lands, each crystal turns into a green up / red down arrow and the liquid in the icon
 ## sloshes to its new level, tinted green or red. After proposals_per_day stamps the day
 ## ends: the view turns to the window on the left wall, pushes through it,
 ## and shows the city from above, flying to whatever the day's choices
@@ -179,6 +180,13 @@ enum Stat { AWARENESS, MONEY, INFRASTRUCTURE, BUREAUCRACY }
 ## "agency_park_tents" (Central Park camp). Empty = everything denied.
 @export var test_approved: Array[String] = ["urban_timber_bracing"]
 
+@export_group("Tutorial")
+## Walk a first-time player through the desk before the first visitor
+## (tutorial.gd). Seen once, it stays off (flag file in user://).
+@export var tutorial := true
+## Testing: show the tutorial on every run, not only the first.
+@export var tutorial_every_time := true
+
 # ---------------------------------------------------------------- layout
 
 const W := 9.0            # room width (x from -4.5 to 4.5)
@@ -253,6 +261,14 @@ var stamps: Array[Node3D] = []
 var traffic: Node3D
 var desk: Node3D
 var day_cycle: Node
+## Soft loop under the stamps. Fades in at the desk, out when the day leaves the room.
+const DESK_BED := "res://assets/audio/desk/desk_bed.wav"
+const DESK_BED_DB := -4.0
+const DESK_BED_IN := 6.0
+const DESK_BED_OUT := 2.4
+var _desk_bed: AudioStreamPlayer
+var _desk_bed_fade: Tween
+var _desk_bed_started := false
 ## True while something else (the end-of-day sequence) drives the camera.
 var camera_locked := false
 ## Proposals presented so far.
@@ -281,19 +297,80 @@ var _gauge_mats: Array[ShaderMaterial] = []
 var _gauge_tweens: Array[Tween] = [null, null, null, null]
 var _ease_stats := false
 ## One crystal per gauge, and how much each one is showing (0 hidden .. 1).
+## _hint_mag is the size for the current change: 10 points is 1.
 var _hints: Array[Node3D] = []
 var _hint_on: Array[bool] = [false, false, false, false]
 var _hint_k: Array[float] = [0.0, 0.0, 0.0, 0.0]
+var _hint_mag: Array[float] = [1.0, 1.0, 1.0, 1.0]
 ## Change feedback, one per gauge. Only started by set_stat() (i.e. after a
 ## stamp lands), never while a stamp is merely held over the paper.
 var _arrows: Array[Node3D] = []
 var _arrow_halo_mats: Array[StandardMaterial3D] = []
 var _fx_age: Array[float] = [-1.0, -1.0, -1.0, -1.0]   # seconds since change, -1 idle
 var _fx_dir: Array[float] = [0.0, 0.0, 0.0, 0.0]       # +1 went up, -1 went down
+## Gauges that grow a red frame and a "!" once a drop lands at or below
+## CRITICAL_AT. Add another Stat here to reuse the same mark.
+const CRITICAL_STATS: Array[int] = [Stat.MONEY]
+const CRITICAL_AT := 20.0
+var _warn_on: Array[bool] = [false, false, false, false]
+var _warn_nodes: Array[Node3D] = []
+var _warn_mats: Array[StandardMaterial3D] = []
 
 
 func _ready() -> void:
 	_rebuild()
+	if Engine.is_editor_hint():
+		return
+	# The editor plays the game inside its own window. Asking for maximized
+	# there prints "Embedded window only supports Windowed mode" and the
+	# game process quits back to the editor. An exported build can still fill
+	# the screen; the editor run must stay windowed.
+	if not OS.has_feature("editor"):
+		var win := get_window()
+		if win:
+			win.mode = Window.MODE_MAXIMIZED
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_arm_desk_bed()
+
+
+## The bed stays quiet until the desk is actually on screen, then rises.
+## Leaving for the city (day_ended) takes it back down; the next morning brings it up again.
+func _arm_desk_bed() -> void:
+	var stream := load(DESK_BED) as AudioStream
+	if stream == null:
+		return
+	if stream is AudioStreamWAV:
+		var wav := (stream as AudioStreamWAV).duplicate() as AudioStreamWAV
+		wav.loop_mode = AudioStreamWAV.LOOP_FORWARD
+		wav.loop_begin = 0
+		var frames := int(round(wav.get_length() * wav.mix_rate))
+		if frames > 1:
+			wav.loop_end = frames
+		stream = wav
+	_desk_bed = AudioStreamPlayer.new()
+	_desk_bed.name = "DeskBed"
+	_desk_bed.stream = stream
+	_desk_bed.volume_db = -40.0
+	add_child(_desk_bed)
+	if day_cycle:
+		day_cycle.day_ended.connect(func(_day: int) -> void: _fade_desk_bed(false))
+		day_cycle.day_started.connect(func(_day: int) -> void: _fade_desk_bed(true))
+
+
+func _fade_desk_bed(up: bool) -> void:
+	if _desk_bed == null:
+		return
+	if up and not _desk_bed.playing:
+		_desk_bed.volume_db = -40.0
+		_desk_bed.play()
+	if _desk_bed_fade != null and is_instance_valid(_desk_bed_fade):
+		_desk_bed_fade.kill()
+	_desk_bed_fade = create_tween()
+	_desk_bed_fade.tween_property(
+		_desk_bed, "volume_db", DESK_BED_DB if up else -40.0, DESK_BED_IN if up else DESK_BED_OUT
+	).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT if up else Tween.EASE_IN)
+	if not up:
+		_desk_bed_fade.tween_callback(_desk_bed.stop)
 
 
 func _queue_rebuild() -> void:
@@ -316,6 +393,8 @@ func _rebuild() -> void:
 	_hints.clear()
 	_arrows.clear()
 	_arrow_halo_mats.clear()
+	_warn_nodes.clear()
+	_warn_mats.clear()
 	_fx_age = [-1.0, -1.0, -1.0, -1.0]
 	traffic = null
 	desk = null
@@ -375,6 +454,8 @@ func _rebuild() -> void:
 	if test_ending:
 		dc.start_ending_now.call_deferred(test_approved)
 		return
+	var tut_script = load("res://PresidentRoom/tutorial.gd")
+	var teach: bool = tutorial and (tutorial_every_time or not tut_script.already_seen())
 	if visitors_enabled:
 		var t = (load("res://PresidentRoom/office_traffic.gd") as GDScript).new()
 		t.name = "Visitors"
@@ -382,8 +463,16 @@ func _rebuild() -> void:
 		t.setup(self)
 		t.proposer_arrived.connect(func(_v: Node3D) -> void: _next_proposal())
 		traffic = t
-	else:
+		if teach:
+			t.set_paused(true)
+	elif not teach:
 		get_tree().create_timer(0.8).timeout.connect(_next_proposal)
+	if teach:
+		var tut = tut_script.new()
+		tut.name = "Tutorial"
+		_built.add_child(tut)
+		tut.finished.connect(_on_tutorial_finished)
+		tut.setup(self)
 
 
 # ---------------------------------------------------------------- public
@@ -460,6 +549,14 @@ func _on_aim_changed(choice: int) -> void:
 		show_stat_hints(day_cycle.effects_for(choice == 1))
 
 
+## The tutorial is over: let the first visitor in.
+func _on_tutorial_finished() -> void:
+	if traffic:
+		traffic.set_paused(false)
+	else:
+		get_tree().create_timer(0.8).timeout.connect(_next_proposal)
+
+
 ## A new day: proposals start coming in again.
 func _on_day_started(_day: int) -> void:
 	if traffic:
@@ -469,10 +566,21 @@ func _on_day_started(_day: int) -> void:
 
 
 ## Light a crystal over every gauge whose change is not zero (in Stat order).
-## An empty array hides them all.
+## The dot's size follows the absolute change. An empty array hides them all.
+## A change of 1 (the tutorial's "show a dot") stays at the usual size.
 func show_stat_hints(changes: Array) -> void:
 	for i in 4:
-		_hint_on[i] = i < changes.size() and int(changes[i]) != 0
+		var amount := int(changes[i]) if i < changes.size() else 0
+		_hint_on[i] = amount != 0
+		_hint_mag[i] = _hint_impact_scale(amount)
+
+
+## 5 points is clearly smaller than 10, 15 clearly larger. Shape stays the same.
+func _hint_impact_scale(amount: int) -> float:
+	var mag := absi(amount)
+	if mag <= 1:
+		return 1.0
+	return clampf(pow(float(mag) / 10.0, 0.85), 0.45, 1.85)
 
 
 ## Take the camera away from the chair (true) or give it back (false).
@@ -506,7 +614,8 @@ func left_window_normal() -> Vector3:
 ## Set one of the four stats (0..100). The icon's fill eases to the new level
 ## unless animate is false.
 func set_stat(stat: Stat, value: float, animate := true) -> void:
-	var change := value - get_stat(stat)
+	var previous := get_stat(stat)
+	var change := value - previous
 	_ease_stats = animate
 	match stat:
 		Stat.AWARENESS: peoples_awareness = value
@@ -516,6 +625,12 @@ func set_stat(stat: Stat, value: float, animate := true) -> void:
 	_ease_stats = false
 	if animate and not is_zero_approx(change):
 		_play_change_fx(stat, signf(change))
+	if int(stat) in CRITICAL_STATS:
+		var next := get_stat(stat)
+		if next <= CRITICAL_AT and next < previous:
+			_set_warning(stat, true)
+		elif next > CRITICAL_AT:
+			_set_warning(stat, false)
 
 
 func get_stat(stat: Stat) -> float:
@@ -590,12 +705,17 @@ func _unhandled_input(event: InputEvent) -> void:
 func _process(delta: float) -> void:
 	if Engine.is_editor_hint():
 		return
+	if not _desk_bed_started:
+		_desk_bed_started = true
+		if not test_ending:
+			_fade_desk_bed(true)
 	if camera and _focus != _focus_target and not camera_locked:
 		_focus = move_toward(_focus, _focus_target, delta / maxf(closeup_time, 0.01))
 		_apply_camera()
 	_t += delta
 	_animate_hints(delta)
 	_animate_gauge_fx(delta)
+	_animate_warnings()
 	if _fire_light == null:
 		return
 	var f := 0.5 + 0.5 * sin(_t * 9.0) * sin(_t * 3.7 + 1.3)
@@ -761,7 +881,7 @@ func _build_environment() -> void:
 	env.background_color = Color(0.55, 0.68, 0.85)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(0.96, 0.91, 0.82)
-	env.ambient_light_energy = 0.5
+	env.ambient_light_energy = 0.78
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	env.tonemap_white = 6.0
 	env.ssao_enabled = true
@@ -935,7 +1055,7 @@ func _build_left_window() -> void:
 	var s := SpotLight3D.new()
 	s.name = "LeftWindowLight"
 	s.light_color = Color(0.86, 0.92, 1.0)
-	s.light_energy = 1.1
+	s.light_energy = 1.45
 	s.spot_range = 7.0
 	s.spot_angle = 45.0
 	s.position = Vector3(0, sill_y + LEFT_WINDOW_H - 0.3, 0.3)
@@ -1529,6 +1649,32 @@ const PRINT_QUOTE_BG := Color(1.0, 0.995, 0.98)
 const PRINT_QUOTE_BAR := NAVY
 const PRINT_TEXT := Color(0.12, 0.12, 0.16)
 const PRINT_GOLD := Color(0.8, 0.6, 0.12)
+const DEPT_DIR := "res://PresidentRoom/departments/"
+## Who sent the paper, matched to a mark in PresidentRoom/departments.
+const DEPT_LOGOS := {
+	"chief seismologist": "dept_seismologist.jpg",
+	"minister of health": "dept_health.jpg",
+	"minister of finance": "dept_finance.jpg",
+	"minister of urban planning": "dept_urban.jpg",
+	"minister of interior": "dept_interior.jpg",
+	"minister of education": "dept_education.jpg",
+	"head of disaster agency": "dept_disaster.jpg",
+	"the contractor": "dept_contractor.jpg",
+	"the headman": "dept_headman.jpg",
+	"the influencer": "dept_influencer.jpg",
+	"opposition leader": "dept_opposition.jpg",
+	"the town fool": "dept_fool.jpg",
+}
+## Centre of the ring, pulled in so the thicker stroke stays inside the icon.
+const DEPT_RING_R := 479.0 / 1024.0
+## Same gold stroke around every department mark.
+const DEPT_RING_W := 46.0 / 1024.0
+## Empty gold band left between every mark and the inside of the ring.
+const DEPT_RING_GAP := 0.05
+const DEPT_GOLD_R := 201
+const DEPT_GOLD_G := 149
+const DEPT_GOLD_B := 40
+var _dept_logo_cache := {}
 
 
 func _paper_layout(size_px: Vector2) -> Control:
@@ -1555,19 +1701,31 @@ func _paper_layout(size_px: Vector2) -> Control:
 	col.add_theme_constant_override("separation", 0)
 	margin.add_child(col)
 
-	# --- heading: seal, title, gold rule
-	var seal_row := CenterContainer.new()
-	col.add_child(seal_row)
-	var seal := Panel.new()
-	seal.custom_minimum_size = Vector2(_pt(64), _pt(64))
-	seal.add_theme_stylebox_override("panel", _pstyle(Color(0.95, 0.75, 0.2), Color(0.7, 0.5, 0.08), 5, 32))
-	seal_row.add_child(seal)
-	_pgap(col, 14)
-	var title := _ptext(col, paper_title.to_upper(), _pfont("Montserrat-ExtraBold.ttf", 6), 74, PRINT_TITLE)
+	# --- heading. The department mark sits in this block, beside the title
+	# and the sender, instead of up in the empty corner.
+	var dept := _dept_logo(from)
+	var letter := HBoxContainer.new()
+	letter.alignment = BoxContainer.ALIGNMENT_CENTER
+	letter.add_theme_constant_override("separation", _pt(28))
+	col.add_child(letter)
+	var head := VBoxContainer.new()
+	head.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_theme_constant_override("separation", 0)
+	letter.add_child(head)
+
+	if dept == null:
+		var seal_row := CenterContainer.new()
+		head.add_child(seal_row)
+		var seal := Panel.new()
+		seal.custom_minimum_size = Vector2(_pt(64), _pt(64))
+		seal.add_theme_stylebox_override("panel", _pstyle(Color(0.95, 0.75, 0.2), Color(0.7, 0.5, 0.08), 5, 32))
+		seal_row.add_child(seal)
+		_pgap(head, 14)
+	var title := _ptext(head, paper_title.to_upper(), _pfont("Montserrat-ExtraBold.ttf", 6), 74, PRINT_TITLE)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_pgap(col, 16)
-	_prule(col, PRINT_GOLD, 5)
-	_pgap(col, 40)
+	_pgap(head, 16)
+	_prule(head, PRINT_GOLD, 5)
+	_pgap(head, 28)
 
 	if says.strip_edges() == "" and from == "":
 		# no text yet: grey placeholder lines
@@ -1580,12 +1738,23 @@ func _paper_layout(size_px: Vector2) -> Control:
 			col.add_child(line)
 			_pgap(col, 34)
 	else:
-		# --- who sent it
+		# --- who sent it, with their department mark on the right of this block
 		if from != "":
 			var from_tag := "FROM" if from.to_lower().begins_with("the ") else "FROM THE"
-			_ptext(col, from_tag, _pfont("Montserrat-SemiBold.ttf", 5), 30, PRINT_MUTED)
-			_pgap(col, 4)
-			_ptext(col, from.to_upper(), _pfont("Montserrat-ExtraBold.ttf", 2), 62, PRINT_FROM)
+			_ptext(head, from_tag, _pfont("Montserrat-SemiBold.ttf", 5), 30, PRINT_MUTED)
+			_pgap(head, 4)
+			_ptext(head, from.to_upper(), _pfont("Montserrat-ExtraBold.ttf", 2), 58, PRINT_FROM)
+		if dept != null:
+			var logo := TextureRect.new()
+			logo.texture = dept
+			logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			var s := _pt(176)
+			logo.custom_minimum_size = Vector2(s, s)
+			logo.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			letter.add_child(logo)
+		if from != "":
 			_pgap(col, 30)
 		# --- what they say: big, bold, in a box with a navy bar down its left
 		if says.strip_edges() != "":
@@ -1618,6 +1787,154 @@ func _paper_layout(size_px: Vector2) -> Control:
 	sig.add_child(sig_line)
 	_ptext(sig, "SIGNATURE", _pfont("Montserrat-SemiBold.ttf", 4), 22, PRINT_MUTED).horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	return root
+
+
+## Gold mark for this sender, with the white page around it punched out.
+func _dept_logo(from: String) -> Texture2D:
+	var key := from.strip_edges().to_lower()
+	if not DEPT_LOGOS.has(key):
+		return null
+	if _dept_logo_cache.has(key):
+		return _dept_logo_cache[key]
+	var path: String = DEPT_DIR + String(DEPT_LOGOS[key])
+	var img := Image.new()
+	var loaded: Texture2D = load(path) as Texture2D
+	if loaded != null:
+		img = loaded.get_image()
+	if img == null or img.is_empty():
+		if img == null:
+			img = Image.new()
+		if img.load(path) != OK:
+			return null
+	img.convert(Image.FORMAT_RGBA8)
+	if img.get_width() > 384:
+		img.resize(384, 384, Image.INTERPOLATE_LANCZOS)
+	img = _dept_fit(img)
+	_dept_knockout(img)
+	_dept_draw_ring(img)
+	var tex := ImageTexture.create_from_image(img)
+	_dept_logo_cache[key] = tex
+	return tex
+
+
+## Scale the mark so its farthest pixel stops the same distance inside the ring.
+## The thin circle baked into the seismologist file is left outside the crop.
+func _dept_fit(img: Image) -> Image:
+	var w := img.get_width()
+	var data := img.get_data()
+	var min_x := w
+	var min_y := w
+	var max_x := 0
+	var max_y := 0
+	var found := false
+	var cc := (float(w) - 1.0) * 0.5
+	var limit := 0.455 * float(w)
+	var limit2 := limit * limit
+	var y := 0
+	while y < w:
+		var dy := float(y) - cc
+		var x := 0
+		while x < w:
+			var dx := float(x) - cc
+			if dx * dx + dy * dy <= limit2 and _dept_is_gold(data, (y * w + x) * 4):
+				found = true
+				if x < min_x:
+					min_x = x
+				if y < min_y:
+					min_y = y
+				if x > max_x:
+					max_x = x
+				if y > max_y:
+					max_y = y
+			x += 2
+		y += 2
+	if not found:
+		return img
+	min_x = maxi(min_x - 2, 0)
+	min_y = maxi(min_y - 2, 0)
+	max_x = mini(max_x + 2, w - 1)
+	max_y = mini(max_y + 2, w - 1)
+	var cx := (float(min_x) + float(max_x)) * 0.5
+	var cy := (float(min_y) + float(max_y)) * 0.5
+	var max_d := 1.0
+	y = min_y
+	while y <= max_y:
+		var dy2 := float(y) - cy
+		var x2 := min_x
+		while x2 <= max_x:
+			var dx2 := float(x2) - cx
+			if _dept_is_gold(data, (y * w + x2) * 4):
+				max_d = maxf(max_d, dx2 * dx2 + dy2 * dy2)
+			x2 += 2
+		y += 2
+	max_d = sqrt(max_d) + 2.0
+	var inner := (DEPT_RING_R - DEPT_RING_W * 0.5) * float(w)
+	var scale := (inner - DEPT_RING_GAP * float(w)) / max_d
+	var bw := max_x - min_x + 1
+	var bh := max_y - min_y + 1
+	var glyph := img.get_region(Rect2i(min_x, min_y, bw, bh))
+	var nw := maxi(roundi(float(bw) * scale), 1)
+	var nh := maxi(roundi(float(bh) * scale), 1)
+	glyph.resize(nw, nh, Image.INTERPOLATE_LANCZOS)
+	var canvas := Image.create(w, w, false, Image.FORMAT_RGBA8)
+	canvas.fill(Color(1, 1, 1, 1))
+	canvas.blit_rect(glyph, Rect2i(0, 0, nw, nh), Vector2i(
+			roundi((float(w) - float(nw)) * 0.5), roundi((float(w) - float(nh)) * 0.5)))
+	return canvas
+
+
+func _dept_is_gold(data: PackedByteArray, i: int) -> bool:
+	var rr := data[i]
+	var gg := data[i + 1]
+	var bb := data[i + 2]
+	return rr > 140 and gg > 80 and bb < 150 and rr - bb > 40
+
+
+func _dept_knockout(img: Image) -> void:
+	var data := img.get_data()
+	var i := 0
+	while i < data.size():
+		var whiteness := minf(float(data[i]) / 255.0, minf(float(data[i + 1]) / 255.0, float(data[i + 2]) / 255.0))
+		if whiteness > 0.82:
+			data[i + 3] = clampi(roundi((0.96 - whiteness) / 0.14 * 255.0), 0, data[i + 3])
+		i += 4
+	img.set_data(img.get_width(), img.get_height(), false, Image.FORMAT_RGBA8, data)
+
+
+## One gold ring, same radius and weight, around every department mark.
+func _dept_draw_ring(img: Image) -> void:
+	var w := img.get_width()
+	var data := img.get_data()
+	var c := (float(w) - 1.0) * 0.5
+	var radius := DEPT_RING_R * float(w)
+	var half := DEPT_RING_W * float(w) * 0.5
+	var feather := 1.35
+	var y0 := maxi(int(floor(c - radius - half - feather)), 0)
+	var y1 := mini(int(ceil(c + radius + half + feather)), w - 1)
+	var y := y0
+	while y <= y1:
+		var dy := float(y) - c
+		var x := y0
+		while x <= y1:
+			var dx := float(x) - c
+			var edge := absf(sqrt(dx * dx + dy * dy) - radius)
+			if edge < half + feather:
+				var cov := 1.0
+				if edge > half:
+					cov = (half + feather - edge) / feather
+				var i := (y * w + x) * 4
+				var src_a := float(data[i + 3]) / 255.0
+				var out_a := cov + src_a * (1.0 - cov)
+				if out_a > 0.001:
+					var keep := src_a * (1.0 - cov) / out_a
+					var paint := cov / out_a
+					data[i] = clampi(roundi(float(DEPT_GOLD_R) * paint + float(data[i]) * keep), 0, 255)
+					data[i + 1] = clampi(roundi(float(DEPT_GOLD_G) * paint + float(data[i + 1]) * keep), 0, 255)
+					data[i + 2] = clampi(roundi(float(DEPT_GOLD_B) * paint + float(data[i + 2]) * keep), 0, 255)
+					data[i + 3] = clampi(roundi(out_a * 255.0), 0, 255)
+			x += 1
+		y += 1
+	img.set_data(w, w, false, Image.FORMAT_RGBA8, data)
 
 
 ## The biggest font size (sheet px, from max_px down to min_px) at which the
@@ -1850,12 +2167,14 @@ func _build_stat_gauges() -> void:
 		_hints.append(_crystal(s, Vector3(0, HINT_Y, -d * 0.5 - 0.009)))
 		# the arrow the crystal turns into once the stamp lands
 		_arrows.append(_change_arrow(s, Vector3(0, HINT_Y, -d * 0.5 - 0.009)))
+		_add_gauge_warning(s, ww, wd)
 
 
 const HINT_Y := 0.03
 const CRYSTAL := Color(0.45, 0.88, 1.0)
 
-## A small glowing crystal (a stretched octahedron with a soft halo), hidden.
+## A small crystal (a stretched octahedron), hidden. No halo, so its size reads clearly.
+## Parent scale follows the change: 10 points is this size.
 func _crystal(parent: Node3D, pos: Vector3) -> Node3D:
 	var g := group(parent, "Crystal", pos)
 	var r := 0.0085
@@ -1881,45 +2200,17 @@ func _crystal(parent: Node3D, pos: Vector3) -> Node3D:
 	m.roughness = 0.05
 	m.emission_enabled = true
 	m.emission = CRYSTAL
-	m.emission_energy_multiplier = 2.4
-	m.rim_enabled = true
-	m.rim = 0.8
+	m.emission_energy_multiplier = 0.45
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED
 	gem.material_override = m
 	no_shadow(gem)
 	g.add_child(gem)
-	# soft glow around it, always facing the camera
-	var grad := Gradient.new()
-	grad.set_color(0, Color(0.75, 0.95, 1.0, 0.75))
-	grad.set_color(1, Color(0.5, 0.85, 1.0, 0.0))
-	var tex := GradientTexture2D.new()
-	tex.gradient = grad
-	tex.fill = GradientTexture2D.FILL_RADIAL
-	tex.fill_from = Vector2(0.5, 0.5)
-	tex.fill_to = Vector2(0.5, 0.0)
-	tex.width = 64
-	tex.height = 64
-	var hm := StandardMaterial3D.new()
-	hm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	hm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	hm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	hm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-	hm.albedo_texture = tex
-	hm.no_depth_test = true
-	var q := QuadMesh.new()
-	q.size = Vector2(0.05, 0.05)
-	var halo := MeshInstance3D.new()
-	halo.name = "Halo"
-	halo.mesh = q
-	halo.material_override = hm
-	no_shadow(halo)
-	g.add_child(halo)
 	g.visible = false
 	g.scale = Vector3.ONE * 0.01
 	return g
 
 
-## Pop the crystals in and out, and keep the visible ones turning and bobbing.
+## Pop the crystals in and out. Visible ones drift slowly up and down, nothing else.
 func _animate_hints(delta: float) -> void:
 	for i in _hints.size():
 		var c := _hints[i]
@@ -1931,11 +2222,12 @@ func _animate_hints(delta: float) -> void:
 		c.visible = k > 0.0
 		if not c.visible:
 			continue
-		# a little overshoot as it appears
+		# a little overshoot as it appears, then the impact size
 		var s := k * (1.0 + 0.35 * sin(k * PI)) if _hint_on[i] else k
+		s *= _hint_mag[i]
 		c.scale = Vector3.ONE * maxf(s, 0.01)
-		c.position.y = HINT_Y + sin(_t * 3.2 + i * 1.3) * 0.0022
-		c.rotation.y = _t * 1.6 + i
+		c.rotation = Vector3.ZERO
+		c.position.y = HINT_Y + sin(_t * 0.7 + i * 1.1) * 0.0016
 
 
 const ARROW_UP := Color(0.25, 0.95, 0.4)
@@ -2094,6 +2386,51 @@ func _animate_gauge_fx(delta: float) -> void:
 			_fx_age[i] = -1.0
 			m.set_shader_parameter("slosh", 0.0)
 			m.set_shader_parameter("tint_amount", 0.0)
+
+
+## Red frame and "!" on a gauge. Hidden until that stat drops to CRITICAL_AT.
+## Built for every well; only stats in CRITICAL_STATS ever switch it on.
+func _add_gauge_warning(slot: Node3D, well_w: float, well_d: float) -> void:
+	var warn_mat := StandardMaterial3D.new()
+	warn_mat.albedo_color = Color(0.92, 0.22, 0.12)
+	warn_mat.roughness = 0.35
+	warn_mat.emission_enabled = true
+	warn_mat.emission = Color(1.0, 0.28, 0.14)
+	warn_mat.emission_energy_multiplier = 1.2
+	var mark := group(slot, "Warning", Vector3.ZERO)
+	var pad := 0.005
+	var ow := well_w + pad * 2.0
+	var od := well_d + pad * 2.0
+	var bar := 0.0036
+	var y := 0.0024
+	no_shadow(box(mark, "T", Vector3(ow, 0.0018, bar), Vector3(0, y, -od * 0.5), warn_mat))
+	no_shadow(box(mark, "B", Vector3(ow, 0.0018, bar), Vector3(0, y, od * 0.5), warn_mat))
+	no_shadow(box(mark, "L", Vector3(bar, 0.0018, od), Vector3(-ow * 0.5, y, 0), warn_mat))
+	no_shadow(box(mark, "R", Vector3(bar, 0.0018, od), Vector3(ow * 0.5, y, 0), warn_mat))
+	label(mark, "Mark", "!", Vector3(ow * 0.5 - 0.014, y + 0.001, -od * 0.5 + 0.016),
+		0.00026, Color(1.0, 0.96, 0.9), Color(0.45, 0.06, 0.04), Vector3(-90, 0, 0), 14)
+	mark.visible = false
+	_warn_nodes.append(mark)
+	_warn_mats.append(warn_mat)
+
+
+func _set_warning(stat: int, on: bool) -> void:
+	if stat < 0 or stat >= _warn_on.size():
+		return
+	_warn_on[stat] = on
+	if stat < _warn_nodes.size() and is_instance_valid(_warn_nodes[stat]):
+		_warn_nodes[stat].visible = on
+
+
+func _animate_warnings() -> void:
+	var pulse := 0.62 + 0.38 * sin(_t * 5.0)
+	for i in _warn_nodes.size():
+		if not _warn_on[i] or not is_instance_valid(_warn_nodes[i]):
+			continue
+		_warn_mats[i].emission_energy_multiplier = 0.5 + 1.8 * pulse
+		var bang := _warn_nodes[i].get_node_or_null("Mark") as Label3D
+		if bang:
+			bang.modulate = Color(1.0, 0.96, 0.9, 0.72 + 0.28 * pulse)
 
 
 ## Ease (or snap) one gauge's fill to its stat.
@@ -2321,7 +2658,7 @@ func _build_lights() -> void:
 		var s := SpotLight3D.new()
 		s.name = "Window"
 		s.light_color = Color(0.86, 0.92, 1.0)
-		s.light_energy = 1.6
+		s.light_energy = 2.1
 		s.spot_range = 9.0
 		s.spot_angle = 50.0
 		s.position = Vector3(-x, 2.7, Z_BACK - 0.25)
@@ -2331,7 +2668,7 @@ func _build_lights() -> void:
 	var fill := OmniLight3D.new()
 	fill.name = "DeskFill"
 	fill.light_color = Color(1.0, 0.96, 0.9)
-	fill.light_energy = 0.5
+	fill.light_energy = 0.9
 	fill.omni_range = 2.5
 	fill.position = Vector3(0, 2.0, DESK_Z + 0.9)
 	lights.add_child(fill)

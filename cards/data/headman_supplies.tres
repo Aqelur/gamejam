@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="CardData" format=3]
+
+[ext_resource type="Script" path="res://cards/card_data.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://denemegörselleri/1.jpeg" id="2_image"]
+
+[resource]
+script = ExtResource("1_script")
+id = "headman_supplies"
+character_name = "The Headman"
+image = ExtResource("2_image")
+text = "My neighbors chipped in to buy emergency supplies for the whole block. Can we store them in the community hall?"
+denied_effect = Vector4i(-5, 0, 0, 0)
+approved_effect = Vector4i(0, 5, 10, 0)

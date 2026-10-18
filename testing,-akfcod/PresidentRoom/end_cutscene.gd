@@ -5,7 +5,9 @@ extends Control
 ##
 ##   NEWS_BROADCAST  an old TV in a living room showing the evening news. The
 ##                   anchor is a Pac-Man head in a suit; his mouth flaps while
-##                   `talking` is true (= while the narration plays).
+##                   `talking` is true (= while the narration plays). When the
+##                   set comes on, the breaking-news bed and the anchor's
+##                   gibberish play together until the set goes off.
 ##   CALM_CITY       a cartoon panel: sunny skyline, a tour bus, money popping
 ##                   out of the buildings... and under the ground the fault
 ##                   line, fast asleep. Near the end it opens one eye.
@@ -15,6 +17,14 @@ extends Control
 ##   -> talking = false -> wake_up() -> await outro()
 
 enum Kind { NONE, NEWS_BROADCAST, CALM_CITY }
+
+## "Breaking News" by Monume, Pixabay 547918.
+## https://pixabay.com/music/electro-breaking-news-547918/
+const NEWS_BED := "res://PresidentRoom/audio/monume-breaking-news-547918.mp3"
+## "mamie_gibberish_1" by mamie.wilhelm, Freesound, CC0.
+const ANCHOR_VOICE := "res://PresidentRoom/audio/mamie_gibberish_1.mp3"
+const NEWS_BED_DB := -8.0
+const ANCHOR_DB := -3.0
 
 const YELLOW := Color(1.0, 0.86, 0.12)
 const INK := Color(0.07, 0.06, 0.1)
@@ -40,6 +50,8 @@ var _mouth_timer := 0.0
 var _awake := 0.0          # CALM_CITY: the fault's eye, 0 shut .. 1 open
 var _waking := false
 var _screen: Control       # the TV screen / cartoon panel, clipped
+var _bed: AudioStreamPlayer
+var _anchor: AudioStreamPlayer
 var _rng := RandomNumberGenerator.new()
 var _buildings: Array = []  # {x, w, h, color, windows}
 var _coins: Array = []      # {x, y, age}
@@ -68,6 +80,8 @@ func setup(p_kind: int, font: Font, font_bold: Font, p_expected := 8.0) -> void:
 
 ## TV switches on / the panel pops in.
 func intro() -> void:
+	if kind == Kind.NEWS_BROADCAST:
+		_start_news_audio()
 	var t := create_tween()
 	t.tween_property(self, "_power", 1.0, 0.7 if kind == Kind.NEWS_BROADCAST else 0.45) \
 		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
@@ -80,7 +94,50 @@ func outro() -> void:
 		return
 	var t := create_tween()
 	t.tween_property(self, "_power", 0.0, 0.45).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	_fade_news_audio(t)
 	await t.finished
+	_stop_news_audio()
+
+
+func _exit_tree() -> void:
+	_stop_news_audio()
+
+
+## News bed and the anchor's gibberish at once, both loud enough to hear.
+func _start_news_audio() -> void:
+	_bed = _news_player(NEWS_BED, NEWS_BED_DB, false)
+	_anchor = _news_player(ANCHOR_VOICE, ANCHOR_DB, true)
+
+
+func _fade_news_audio(t: Tween) -> void:
+	for p in [_bed, _anchor]:
+		if p and is_instance_valid(p):
+			t.parallel().tween_property(p, "volume_db", -40.0, 0.45)
+
+
+func _stop_news_audio() -> void:
+	for p in [_bed, _anchor]:
+		if p and is_instance_valid(p):
+			p.stop()
+			p.queue_free()
+	_bed = null
+	_anchor = null
+
+
+func _news_player(path: String, db: float, loop: bool) -> AudioStreamPlayer:
+	if not ResourceLoader.exists(path):
+		return null
+	var stream := load(path) as AudioStream
+	if stream == null:
+		return null
+	if loop and stream is AudioStreamMP3:
+		(stream as AudioStreamMP3).loop = true
+	var p := AudioStreamPlayer.new()
+	p.stream = stream
+	p.volume_db = db
+	add_child(p)
+	p.play()
+	return p
 
 
 ## CALM_CITY: open the fault's eye now, if it hasn't opened yet.

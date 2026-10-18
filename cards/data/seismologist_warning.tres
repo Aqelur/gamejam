@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="CardData" format=3]
+
+[ext_resource type="Script" path="res://cards/card_data.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://denemegörselleri/6.jpeg" id="2_image"]
+
+[resource]
+script = ExtResource("1_script")
+id = "seismologist_warning"
+character_name = "Chief Seismologist"
+image = ExtResource("2_image")
+text = "Mayor, the fault under our city is waking up. I can't give you a date, but the big one is coming. I want to go on TV tonight and warn everyone."
+denied_effect = Vector4i(-10, 10, 0, 0)
+approved_effect = Vector4i(15, -10, 0, 0)

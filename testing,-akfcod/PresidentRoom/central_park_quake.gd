@@ -110,7 +110,7 @@ func prepare(city: Node3D, ending) -> bool:
 		for c in g.get_children():
 			var n := c as Node3D
 			if n:
-				_sway.append({"node": n, "orig": n.transform, "seed": _rng.randf() * 100.0,
+				_sway.append({"node": weakref(n), "orig": n.transform, "seed": _rng.randf() * 100.0,
 					"tall": group_name == "Trees"})
 	return true
 
@@ -250,8 +250,8 @@ func _process(delta: float) -> void:
 	var env := clampf(_sway_t / 0.4, 0.0, 1.0) \
 		* (1.0 - clampf((_sway_t - SHAKE_TIME * 0.6) / (SHAKE_TIME * 0.4), 0.0, 1.0))
 	for s in _sway:
-		var n: Node3D = s.node
-		if not is_instance_valid(n):
+		var n := (s.node as WeakRef).get_ref() as Node3D
+		if n == null:
 			continue
 		var sd: float = s.seed
 		var rot := deg_to_rad(6.0 if s.tall else 3.0) * env
@@ -267,8 +267,9 @@ func _process(delta: float) -> void:
 func _restore_sway() -> void:
 	_sway_t = -1.0
 	for s in _sway:
-		if is_instance_valid(s.node):
-			(s.node as Node3D).transform = s.orig
+		var n := (s.node as WeakRef).get_ref() as Node3D
+		if n:
+			n.transform = s.orig
 
 
 # ================================================================ 3. later

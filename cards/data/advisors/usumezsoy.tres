@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="AdvisorData" format=3]
+
+[ext_resource type="Script" path="res://cards/advisor_data.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://cards/images/advisor_usumezsoy.jpg" id="2_portrait"]
+
+[resource]
+script = ExtResource("1_script")
+id = "usumezsoy"
+display_name = "Prof. Şener Üşümezsoy"
+portrait = ExtResource("2_portrait")
+says = "Everyone is looking at the wrong fault. I know which segment is loaded. Give me a day and I will tell you when it is not coming."
+effects_text = "+ Tells you one day the quake will NOT come.
+- Chief Seismologist: approving gives 5 less Awareness."
+price = 10

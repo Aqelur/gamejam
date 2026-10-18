@@ -1,135 +1,207 @@
 extends Control
 
-const MARK_APPROVED: Texture2D = preload("res://cards/images/stamp_approved.png")
-const MARK_DENIED: Texture2D = preload("res://cards/images/stamp_denied.png")
+## Çubuk sırası: 0 Awareness, 1 Money, 2 Infrastructure, 3 Bureaucracy.
 
+const MONEY := 1
+
+@export var first_card: CardData
 @export var cards: Array[CardData] = []
-@export var mark_hold_time := 0.45
-@export var paper_exit_duration := 0.35
-@export var paper_enter_duration := 0.25
-@export var mark_max_tilt_degrees := 12.0
-@export var crumple_duration := 0.7
-@export var throw_duration := 0.55
-@export var paper_ball_radius := 58.0
-@export var bar_start_value := 50.0
+@export var advisors: Array[AdvisorData] = []
+@export var bar_start_value := 50
+@export var cards_per_day := 4
+@export var quake_day_min := 7
+@export var quake_day_max := 9
+@export var offer_days: Array[int] = [3, 5]
+## Danışman parası ödendikten sonra Money bunun altına düşemez.
+@export var min_money_after_hire := 20
+@export var rich_money := 80
+@export var rich_surcharge := 5
 
-var _index := 0
-var _busy := false
-var _paper_rest := Vector2.ZERO
+var _values: Array[int] = []
+var _deck: Array[CardData] = []
+var _current: CardData
+var _day := 0
+var _cards_today := 0
+var _quake_day := 0
+## Deprem günü kaçıncı karttan sonra geleceği.
+var _quake_after := 0
+var _offered: Array[AdvisorData] = []
+var _hired: Array[AdvisorData] = []
+var _screen_done: Callable
 
-@onready var _paper: Panel = %Paper
+@onready var _card: SwipeCard = %Card
 @onready var _text_label: Label = %TextLabel
-@onready var _mark: TextureRect = %Mark
-@onready var _person_image: TextureRect = %PersonImage
+@onready var _note_label: Label = %NoteLabel
 @onready var _name_label: Label = %NameLabel
 @onready var _balance: BalanceBar = %BalanceStrip
+@onready var _day_screen: Control = %DayScreen
+@onready var _day_label: Label = %DayLabel
+@onready var _day_hint: Label = %DayHint
+@onready var _offer: AdvisorOffer = %AdvisorOffer
+@onready var _shelf: Container = %AdvisorShelf
 
 
 func _ready() -> void:
+	randomize()
 	for i in _balance.icons.size():
+		_values.append(bar_start_value)
 		_balance.set_value(i, bar_start_value)
-	_paper_rest = _paper.position
-	_mark.hide()
-	for stamp: Stamp in [%AcceptStamp, %RejectStamp]:
-		stamp.dropped.connect(_on_stamp_dropped)
-	_show_card()
+	_quake_day = randi_range(quake_day_min, quake_day_max)
+	_quake_after = randi_range(1, cards_per_day - 1)
+	if first_card:
+		_deck.append(first_card)
+	_refill_deck()
+	_card.swiped.connect(_on_card_swiped)
+	_offer.closed.connect(_on_offer_closed)
+	_day_screen.gui_input.connect(_on_day_screen_input)
+	_offer.hide()
+	_hide_card()
+	_start_day()
 
 
-func _show_card() -> void:
-	if cards.is_empty():
-		_text_label.text = ""
-		_name_label.text = ""
-		_person_image.texture = null
+func _unhandled_input(event: InputEvent) -> void:
+	if _day_screen.visible and (event.is_action_pressed("action") or event.is_action_pressed("jump")):
+		_close_day_screen()
+
+
+func _start_day() -> void:
+	_day += 1
+	_cards_today = 0
+	_show_screen("Day %d" % _day, _begin_day)
+
+
+func _begin_day() -> void:
+	if _day in offer_days:
+		var left := advisors.filter(func(a: AdvisorData) -> bool: return not (a in _offered))
+		if not left.is_empty():
+			var advisor: AdvisorData = left.pick_random()
+			_offered.append(advisor)
+			var price := _price_of(advisor)
+			_offer.set_meta("advisor", advisor)
+			_offer.set_meta("price", price)
+			_offer.open(advisor, price, price != advisor.price, _values[MONEY] - price >= min_money_after_hire)
+			return
+	_begin_cards()
+
+
+func _price_of(advisor: AdvisorData) -> int:
+	if _values[MONEY] >= rich_money:
+		return advisor.price + rich_surcharge
+	return advisor.price
+
+
+func _on_offer_closed(hired: bool) -> void:
+	if hired:
+		var advisor: AdvisorData = _offer.get_meta("advisor")
+		_apply(Vector4i(0, -int(_offer.get_meta("price")), 0, 0))
+		_hired.append(advisor)
+		_add_to_shelf(advisor)
+	_begin_cards()
+
+
+func _add_to_shelf(advisor: AdvisorData) -> void:
+	var box := VBoxContainer.new()
+	box.custom_minimum_size = Vector2(150.0, 0.0)
+	var picture := TextureRect.new()
+	picture.texture = advisor.portrait
+	picture.custom_minimum_size = Vector2(150.0, 200.0)
+	picture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	picture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	box.add_child(picture)
+	if advisor.id == "usumezsoy":
+		var hint := Label.new()
+		hint.text = "\"Not on day %d.\nI am sure of it.\"" % _safe_day()
+		hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		hint.add_theme_font_size_override("font_size", 16)
+		hint.add_theme_color_override("font_color", Color(0.96, 0.85, 0.55))
+		box.add_child(hint)
+	_shelf.add_child(box)
+
+
+## Deprem günü olabilecek ama olmayan, henüz geçmemiş bir gün.
+func _safe_day() -> int:
+	var days: Array[int] = []
+	for d in range(quake_day_min, quake_day_max + 1):
+		if d != _quake_day and d >= _day:
+			days.append(d)
+	if days.is_empty():
+		return _quake_day - 1
+	return days.pick_random()
+
+
+func _begin_cards() -> void:
+	_card.show()
+	_card.set_process_unhandled_input(true)
+	_next_card()
+
+
+func _next_card() -> void:
+	if _day == _quake_day and _cards_today == _quake_after:
+		_hide_card()
+		_show_screen("EARTHQUAKE", get_tree().reload_current_scene, "Click to play again")
 		return
-	var card := cards[_index]
-	_text_label.text = card.text
-	_name_label.text = card.character_name
-	_person_image.texture = card.image
-
-
-func _on_stamp_dropped(stamp: Stamp) -> void:
-	var point := stamp.get_global_rect().get_center()
-	stamp.return_home()
-	if _busy or cards.is_empty() or not _paper.get_global_rect().has_point(point):
+	if _cards_today >= cards_per_day:
+		_hide_card()
+		_start_day()
 		return
-	_busy = true
-	_press_mark(stamp, point)
-	await get_tree().create_timer(mark_hold_time).timeout
-	await _next_record(stamp.stamp_text == "DENIED")
-	_busy = false
+	if _deck.is_empty():
+		_refill_deck()
+	_current = _deck.pop_front()
+	_text_label.text = _current.text
+	_name_label.text = _current.character_name
+	var notes: PackedStringArray = []
+	for advisor in _hired:
+		var note := advisor.card_note(_current)
+		if note != "":
+			notes.append(note)
+	_note_label.text = "\n".join(notes)
+	_card.show_data(_current)
 
 
-func _press_mark(stamp: Stamp, point: Vector2) -> void:
-	_mark.texture = MARK_APPROVED if stamp.stamp_text == "APPROVED" else MARK_DENIED
-	_mark.modulate = Color(1, 1, 1, 0.92)
-	var top_left := point - _paper.global_position - _mark.size / 2.0
-	_mark.position = top_left.clamp(Vector2.ZERO, _paper.size - _mark.size)
-	_mark.rotation = deg_to_rad(randf_range(-mark_max_tilt_degrees, mark_max_tilt_degrees))
-	_mark.show()
+func _refill_deck() -> void:
+	var fresh := cards.duplicate()
+	fresh.shuffle()
+	if fresh.size() > 1 and fresh[0] == _current:
+		fresh.push_back(fresh.pop_front())
+	_deck.append_array(fresh)
 
 
-## Kişi ve kâğıt aynı kayda aittir, birlikte çıkar ve birlikte gelir.
-func _next_record(crumple: bool) -> void:
-	if crumple:
-		await _crumple_and_throw()
-	else:
-		await _slide_out()
-
-	_index = (_index + 1) % cards.size()
-	_show_card()
-	_mark.hide()
-	_paper.position = _paper_rest + Vector2(0.0, 40.0)
-	_paper.rotation = 0.0
-	_paper.scale = Vector2.ONE
-	_paper.modulate = Color(1, 1, 1, 0)
-	var appear := create_tween().set_parallel().set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	appear.tween_property(_paper, "position", _paper_rest, paper_enter_duration)
-	appear.tween_property(_paper, "modulate:a", 1.0, paper_enter_duration)
-	appear.tween_property(_person_image, "modulate:a", 1.0, paper_enter_duration)
-	appear.tween_property(_name_label, "modulate:a", 1.0, paper_enter_duration)
-	await appear.finished
+func _on_card_swiped(side: int) -> void:
+	var approved := side > 0
+	var effect := _current.approved_effect if approved else _current.denied_effect
+	for advisor in _hired:
+		effect = advisor.modify(_current, approved, effect)
+	_apply(effect)
+	_cards_today += 1
+	_next_card()
 
 
-func _slide_out() -> void:
-	var out := create_tween().set_parallel().set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-	out.tween_property(_paper, "position", _paper_rest + Vector2(-900.0, -60.0), paper_exit_duration)
-	out.tween_property(_paper, "rotation", deg_to_rad(-15.0), paper_exit_duration)
-	out.tween_property(_paper, "modulate:a", 0.0, paper_exit_duration)
-	out.tween_property(_person_image, "modulate:a", 0.0, paper_exit_duration)
-	out.tween_property(_name_label, "modulate:a", 0.0, paper_exit_duration)
-	await out.finished
+func _apply(effect: Vector4i) -> void:
+	for i in _values.size():
+		_values[i] = clampi(_values[i] + effect[i], 0, 100)
+		_balance.set_value(i, _values[i])
 
 
-## Kâğıt yerinde buruşup top olur, top kavis çizerek ekrandan atılır.
-func _crumple_and_throw() -> void:
-	var person := create_tween().set_parallel()
-	person.tween_property(_person_image, "modulate:a", 0.0, crumple_duration + throw_duration)
-	person.tween_property(_name_label, "modulate:a", 0.0, crumple_duration + throw_duration)
+func _hide_card() -> void:
+	_card.hide()
+	_card.set_process_unhandled_input(false)
+	_text_label.text = ""
+	_note_label.text = ""
+	_name_label.text = ""
 
-	var ball := CrumpledPaper.new()
-	ball.ball_radius = paper_ball_radius
-	add_child(ball)
-	ball.capture(_paper)
-	create_tween().tween_property(_paper, "modulate:a", 0.0, 0.08)
 
-	# Eller kâğıdı tek hamlede değil, birkaç sıkışta topak yapar.
-	var squeezes: Array[float] = [0.3, 0.55, 0.8, 1.0]
-	var step_time := crumple_duration / squeezes.size()
-	var crumple := create_tween().set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	for i in squeezes.size():
-		var side := 1.0 if i % 2 == 0 else -1.0
-		crumple.tween_property(ball, "amount", squeezes[i], step_time)
-		crumple.parallel().tween_property(ball, "rotation", deg_to_rad(randf_range(4.0, 12.0)) * side, step_time)
-	await crumple.finished
+func _show_screen(title: String, on_done: Callable, hint := "Click to continue") -> void:
+	_day_label.text = title
+	_day_hint.text = hint
+	_screen_done = on_done
+	_day_screen.show()
 
-	var start := ball.global_position
-	var end := Vector2(get_viewport_rect().size.x + paper_ball_radius * 3.0, start.y + 140.0)
-	var peak := Vector2(lerpf(start.x, end.x, 0.5), start.y - 260.0)
-	var throw := create_tween().set_parallel()
-	throw.tween_method(func(t: float) -> void:
-		ball.global_position = start.lerp(peak, t).lerp(peak.lerp(end, t), t),
-		0.0, 1.0, throw_duration)
-	throw.tween_property(ball, "rotation", ball.rotation + TAU * 2.0, throw_duration)
-	throw.tween_property(ball, "scale", Vector2(0.8, 0.8), throw_duration)
-	await throw.finished
-	ball.queue_free()
+
+func _on_day_screen_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		_close_day_screen()
+
+
+func _close_day_screen() -> void:
+	_day_screen.hide()
+	_screen_done.call()

@@ -148,8 +148,9 @@ func reset() -> void:
 			bq.queue_free()
 	building_quakes.clear()
 	for s in _shakers:
-		if is_instance_valid(s.node):
-			s.node.transform = s.orig
+		var n := (s.node as WeakRef).get_ref() as Node3D
+		if n:
+			n.transform = s.orig
 	_shakers.clear()
 	if _fx != null and is_instance_valid(_fx):
 		_fx.queue_free()
@@ -259,7 +260,7 @@ func _add_shaker(n: Node3D, delay: float, amp: float, is_prop: bool) -> void:
 	if is_prop and amp > 0.6 and randf() < 0.6:
 		var axis := Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)).normalized()
 		lean = Basis(axis, deg_to_rad(randf_range(8.0, 22.0)))
-	_shakers.append({"node": n, "orig": n.transform, "delay": delay, "amp": amp, "tall": tall,
+	_shakers.append({"node": weakref(n), "orig": n.transform, "delay": delay, "amp": amp, "tall": tall,
 			"lean": lean, "prop": is_prop, "seed": randf() * 100.0, "debris": false, "puffed": false})
 
 
@@ -403,10 +404,11 @@ func _end_quake() -> void:
 		_ring_emitter.emitting = false
 	# leave props leaning, put buildings back upright
 	for s in _shakers:
-		if is_instance_valid(s.node):
+		var n := (s.node as WeakRef).get_ref() as Node3D
+		if n:
 			var xf: Transform3D = s.orig
 			xf.basis = s.lean * xf.basis
-			s.node.transform = xf
+			n.transform = xf
 	_haze_out()
 	quake_finished.emit()
 
@@ -432,8 +434,8 @@ func _process(delta: float) -> void:
 		_next_kick = _t + randf_range(0.5, 1.4)
 
 	for s in _shakers:
-		var n: Node3D = s.node
-		if not is_instance_valid(n):
+		var n := (s.node as WeakRef).get_ref() as Node3D
+		if n == null:
 			continue
 		var lt: float = _t - s.delay
 		if lt < 0.0:

@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="CardData" format=3]
+
+[ext_resource type="Script" path="res://cards/card_data.gd" id="1_script"]
+
+[resource]
+script = ExtResource("1_script")
+id = "fool_doorway"
+character_name = "The Town Fool"
+text = "Mayor! I've found the safest spot in any quake: the doorway! Let me paint every doorframe in town gold, so people know where to run."
+approved_effect = Vector4i(-10, -5, 0, 0)

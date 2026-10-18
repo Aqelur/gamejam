@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="CardData" format=3]
+
+[ext_resource type="Script" path="res://cards/card_data.gd" id="1_script"]
+
+[resource]
+script = ExtResource("1_script")
+id = "fool_goat"
+character_name = "The Town Fool"
+text = "My goat stared at the wall all night. That means a quake is coming! Ring the sirens!"
+approved_effect = Vector4i(-5, 0, 0, 0)

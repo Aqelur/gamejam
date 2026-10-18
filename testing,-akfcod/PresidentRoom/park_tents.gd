@@ -17,6 +17,8 @@ extends Node3D
 
 const PARK := "Districts/EvacuationPark/CentralPark"
 const TENT := preload("res://Models/Custom/tent.glb")
+const TENT_SOUND := "res://assets/audio/city/tent_pitch.ogg"
+const TENT_DB := -4.0
 const SIGN := preload("res://Models/Custom/sign_evacuation.glb")
 const CRATES := preload("res://Models/Custom/supply_crates.glb")
 const FONT := "res://PresidentRoom/fonts/Montserrat-ExtraBold.ttf"
@@ -52,6 +54,7 @@ var _items: Array[Dictionary] = []
 var _tweens: Array[Tween] = []
 var _font: Font
 var _mats := {}
+var _tent_sound: AudioStream
 
 
 func _init() -> void:
@@ -67,6 +70,8 @@ func setup(park: Node3D) -> void:
 	_tile = absf(park.global_basis.get_scale().x)
 	if ResourceLoader.exists(FONT):
 		_font = load(FONT) as Font
+	if ResourceLoader.exists(TENT_SOUND):
+		_tent_sound = load(TENT_SOUND) as AudioStream
 	_collect_obstacles()
 	_place_signs()
 	_place_gate()
@@ -103,7 +108,9 @@ func raise() -> void:
 		tw.tween_callback(func() -> void:
 			n.visible = true
 			if it.dust:
-				_puff(n.global_position)).set_delay(d)
+				_puff(n.global_position)
+			if String(n.name).begins_with("Tent"):
+				_play_tent()).set_delay(d)
 		tw.tween_property(n, "scale", full * 1.12, 0.22).set_delay(d) \
 			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 		tw.tween_property(n, "scale", full, 0.14).set_delay(d + 0.22) \
@@ -286,6 +293,19 @@ func _place_tents() -> void:
 		_circles.append(Vector3(s.x, s.y, TENT_R))
 		_add(tent, delay, true, TENT_SCALE)
 		delay += POP_GAP
+
+
+## One tent hitting the grass. Overlaps the next ones; each clip frees itself.
+func _play_tent() -> void:
+	if _tent_sound == null:
+		return
+	var p := AudioStreamPlayer.new()
+	p.stream = _tent_sound
+	p.volume_db = TENT_DB
+	p.pitch_scale = _rng.randf_range(0.94, 1.06)
+	p.finished.connect(p.queue_free)
+	add_child(p)
+	p.play()
 
 
 func _add(n: Node3D, delay: float, dust: bool, size := -1.0) -> void:

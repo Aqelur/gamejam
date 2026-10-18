@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="CardData" format=3]
+
+[ext_resource type="Script" path="res://cards/card_data.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://denemegörselleri/3.jpeg" id="2_image"]
+
+[resource]
+script = ExtResource("1_script")
+id = "influencer_bracelet"
+character_name = "The Influencer"
+image = ExtResource("2_image")
+text = "A brand wants to sponsor the town! They make Quake-Proof Bracelets. Totally scientific, probably. They'll pay us just to say we like them!"
+approved_effect = Vector4i(-10, 15, 0, 0)

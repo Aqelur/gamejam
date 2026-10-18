@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="CardData" format=3]
+
+[ext_resource type="Script" path="res://cards/card_data.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://denemegörselleri/1.jpeg" id="2_image"]
+
+[resource]
+script = ExtResource("1_script")
+id = "headman_donation"
+character_name = "The Headman"
+image = ExtResource("2_image")
+text = "The neighbors passed a hat around and raised some money for the quake. They want to run a first-aid course with it. Or you can take it for the treasury. Will you let them run the course?"
+denied_effect = Vector4i(0, 15, 0, 0)
+approved_effect = Vector4i(10, 0, 0, 0)

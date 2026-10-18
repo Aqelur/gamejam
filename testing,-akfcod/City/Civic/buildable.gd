@@ -271,6 +271,10 @@ func _workers_leave() -> void:
 func _cleanup() -> void:
 	if is_instance_valid(_fx):
 		_fx.queue_free()
+	# Drop the sign refs before the lot frees them. Callers (the quake ending)
+	# still read these variables, and a freed Label3D there closes the game.
+	_sign = null
+	_sub_sign = null
 	if is_instance_valid(_lot):
 		_lot.queue_free()
 	_jack = null

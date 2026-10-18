@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="CardData" format=3]
+
+[ext_resource type="Script" path="res://cards/card_data.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://denemegörselleri/5.jpeg" id="2_image"]
+
+[resource]
+script = ExtResource("1_script")
+id = "health_hospital"
+character_name = "Minister of Health"
+image = ExtResource("2_image")
+text = "Mayor, this city doesn't have a single hospital. When the quake hits, the injured will have nowhere to go. Give me the land and the budget."
+denied_effect = Vector4i(0, 15, -15, 0)
+approved_effect = Vector4i(0, -15, 15, 5)

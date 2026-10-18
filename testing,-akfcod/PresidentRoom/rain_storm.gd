@@ -44,14 +44,14 @@ const THUNDER_DB := -1.0
 const INDOOR_DB := -11.0                  # how much quieter it is inside
 
 ## The overcast look.
-const SKY_TOP := Color(0.09, 0.1, 0.12)
-const SKY_HORIZON := Color(0.2, 0.22, 0.25)
-const GROUND_BOTTOM := Color(0.06, 0.065, 0.075)
-const GROUND_HORIZON := Color(0.2, 0.22, 0.25)
-const SUN_ENERGY := 0.32
-const SUN_COLOR := Color(0.68, 0.75, 0.88)
-const FOG_COLOR := Color(0.17, 0.19, 0.22)
-const FOG_DENSITY := 0.0011
+const SKY_TOP := Color(0.3, 0.36, 0.44)
+const SKY_HORIZON := Color(0.58, 0.62, 0.66)
+const GROUND_BOTTOM := Color(0.24, 0.26, 0.3)
+const GROUND_HORIZON := Color(0.5, 0.54, 0.58)
+const SUN_ENERGY := 0.95
+const SUN_COLOR := Color(0.84, 0.88, 0.94)
+const FOG_COLOR := Color(0.62, 0.66, 0.7)
+const FOG_DENSITY := 0.0004
 
 var _cam: Camera3D
 var _env: Environment
@@ -156,12 +156,12 @@ func _darken(city: Node3D) -> void:
 		_env.fog_light_color = FOG_COLOR
 		_env.fog_light_energy = 1.0
 		_env.fog_density = FOG_DENSITY
-		_env.fog_sky_affect = 0.6
+		_env.fog_sky_affect = 0.35
 		_env.adjustment_enabled = true
-		_env.adjustment_saturation = 0.55
-		_env.adjustment_brightness = 0.88
-		_env.adjustment_contrast = 1.06
-		_env.ambient_light_energy = 0.7
+		_env.adjustment_saturation = 0.82
+		_env.adjustment_brightness = 1.12
+		_env.adjustment_contrast = 1.02
+		_env.ambient_light_energy = 1.25
 		we.environment = _env
 		_base["bg"] = _env.background_energy_multiplier
 		_base["ambient"] = _env.ambient_light_energy

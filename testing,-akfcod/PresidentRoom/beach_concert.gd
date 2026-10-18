@@ -792,11 +792,15 @@ func _firework() -> void:
 	_light_root.add_child(flash)
 	var t := create_tween()
 	t.tween_property(flash, "light_energy", 0.0, 0.9).set_ease(Tween.EASE_OUT)
+	var puff: WeakRef = weakref(p)
+	var flare: WeakRef = weakref(flash)
 	get_tree().create_timer(2.6).timeout.connect(func() -> void:
-		if is_instance_valid(p):
-			p.queue_free()
-		if is_instance_valid(flash):
-			flash.queue_free())
+		var gone_p = puff.get_ref()
+		if gone_p:
+			gone_p.queue_free()
+		var gone_f = flare.get_ref()
+		if gone_f:
+			gone_f.queue_free())
 	_boom_env = 1.0
 
 

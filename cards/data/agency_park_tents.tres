@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="CardData" format=3]
+
+[ext_resource type="Script" path="res://cards/card_data.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://denemegörselleri/7.jpeg" id="2_image"]
+
+[resource]
+script = ExtResource("1_script")
+id = "agency_park_tents"
+character_name = "Head of Disaster Agency"
+image = ExtResource("2_image")
+text = "If the big one hits at night, people will need somewhere to sleep. Let me set up tents and evacuation signs in Central Park, ready to go."
+denied_effect = Vector4i(0, 5, -5, 0)
+approved_effect = Vector4i(0, -10, 10, 5)

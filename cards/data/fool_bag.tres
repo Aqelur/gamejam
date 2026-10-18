@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="CardData" format=3]
+
+[ext_resource type="Script" path="res://cards/card_data.gd" id="1_script"]
+
+[resource]
+script = ExtResource("1_script")
+id = "fool_bag"
+character_name = "The Town Fool"
+text = "I keep a bag by my door: water, a flashlight, a whistle and my rubber chicken. Everyone laughs at me. Want one, Mayor?"
+approved_effect = Vector4i(5, -5, 0, 0)
