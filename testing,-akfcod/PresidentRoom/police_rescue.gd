@@ -67,6 +67,14 @@ const ENTRY_TILES := 7
 ## Patrol car speed in tiles a second, and how long it waits at a pile.
 const CAR_SPEED := 3.2
 const DROP_TIME := 0.9
+## Traffic (tiles): cars keep LANE right of the road's centre line, stay
+## CAR_GAP behind a moving car (CAR_PARKED_GAP behind a parked one while they
+## wait to go round it), and count as in each other's way within CAR_WIDTH
+## side to side.
+const LANE := 0.2
+const CAR_GAP := 0.75
+const CAR_PARKED_GAP := 0.9
+const CAR_WIDTH := 0.3
 ## Officers dropped at each pile.
 const CREW := 2
 ## Seconds of digging before the first person comes up, and between people.
@@ -355,8 +363,15 @@ func _patrol(c: Dictionary, sites: Array, delay: float) -> void:
 			if path.size() > ENTRY_TILES + 1:
 				path = path.slice(path.size() - ENTRY_TILES - 1)
 			first = false
+			# don't pop into view on top of a car that's already there
+			var wait := 4.0
+			while wait > 0.0 and not _spot_free(c, path[0], 1.0 * tile):
+				await get_tree().process_frame
+				wait -= get_process_delta_time()
+			if not is_inside_tree():
+				return
 			car.visible = true
-			_put_car(car, path[0], path[1] if path.size() > 1 else path[0] + Vector3.LEFT)
+			_put_car(c, path[0], path[1] if path.size() > 1 else path[0] + Vector3.LEFT)
 		# a car already stopped at this pile: pull up behind it
 		var n: int = _parked.get(s.road, 0)
 		_parked[s.road] = n + 1
@@ -376,36 +391,149 @@ func _patrol(c: Dictionary, sites: Array, delay: float) -> void:
 	c.done = true
 
 
-## Drive along `path` (world points) at CAR_SPEED, turning smoothly, braking
-## into the last tile.
+## Drive along `path` (road tile centres, world points) at CAR_SPEED, braking
+## into the last tile. The car keeps to the right-hand lane (LANE off the
+## centre line), so cars going opposite ways pass each other. It slows and
+## queues behind a car ahead going its way, and swings out round a car that is
+## parked (or stuck) in its lane once the other lane is clear, instead of
+## driving through it.
 func _drive(c: Dictionary, path: Array) -> void:
 	var car: Node3D = c.node
 	if path.size() < 2 or not is_instance_valid(car):
 		return
 	c.driving = true
-	var speed := CAR_SPEED * tile
+	var top := CAR_SPEED * tile
+	var lane := LANE * tile
 	var i := 1
-	var p: Vector3 = car.global_position
+	var p: Vector3 = c.get("track", path[0])
 	while i < path.size() and is_inside_tree() and is_instance_valid(car):
 		await get_tree().process_frame
 		var dt := get_process_delta_time()
-		var to: Vector3 = (path[i] as Vector3) - p
-		to.y = 0.0
-		var left_total := to.length() + float(path.size() - 1 - i) * tile
-		var v := speed * clampf(left_total / (1.2 * tile), 0.25, 1.0)
-		var step := v * dt
-		if to.length() <= step:
-			p = path[i]
-			i += 1
+		var to: Vector3 = _flat3((path[i] as Vector3) - p)
+		var dist := to.length()
+		var dir: Vector3 = to / dist if dist > 0.001 else (c.heading as Vector3)
+		c.heading = dir
+		# the lane follows the road round corners, turning with the car
+		var seg_right := dir.cross(Vector3.UP).normalized()
+		var r: Vector3 = c.right
+		r = r.rotated(Vector3.UP, clampf(r.signed_angle_to(seg_right, Vector3.UP), -dt * 4.0, dt * 4.0))
+		c.right = r
+		var left_total := dist
+		for k in range(i, path.size() - 1):
+			left_total += _flat((path[k + 1] as Vector3) - (path[k] as Vector3)).length()
+		var want := top * clampf(left_total / (1.2 * tile), 0.25, 1.0)
+
+		# --- traffic
+		var lat_target := lane
+		var ghost: float = c.get("ghost", 0.0)
+		var limit := INF      # how far it may go before it has to stop
+		if ghost > 0.0:
+			c.ghost = ghost - dt
 		else:
-			p += to.normalized() * step
-		if to.length() > 0.001:
-			var want := Basis.looking_at(-to.normalized(), Vector3.UP)
-			var cur := car.global_basis.orthonormalized()
-			car.global_transform = Transform3D(cur.slerp(want, clampf(dt * 8.0, 0.0, 1.0)).scaled(Vector3.ONE * tile), p)
-		else:
-			car.global_position = p
+			var passing = c.get("passing")
+			if passing != null:
+				# still beside the car it is going round?
+				var rel := _flat3((passing.node as Node3D).global_position - car.global_position)
+				if rel.dot(dir) < -0.6 * tile or rel.length() > 3.0 * tile:
+					c.passing = null
+					passing = null
+			if passing != null:
+				lat_target = -lane
+			var ahead := _car_ahead(c, p, dir, r, lat_target)
+			var o = ahead.car
+			var d: float = ahead.d
+			# a car parked just past the end of our run (we pull up behind it)
+			if o != null and d > left_total + 0.3 * tile:
+				o = null
+			if o != null:
+				var same_way: bool = o.driving and (o.heading as Vector3).dot(dir) > 0.5 and o.get("passing") == null
+				var oncoming: bool = o.driving and (o.heading as Vector3).dot(dir) < -0.5
+				if same_way:
+					# follow it at a distance
+					limit = d - CAR_GAP * tile
+					want = minf(want, top * clampf((d - CAR_GAP * tile) / (1.2 * tile), 0.0, 1.0))
+				elif oncoming:
+					# it's in our lane (going round something): tuck in and let it by
+					lat_target = lane + 0.12 * tile
+					limit = d - CAR_GAP * tile
+					want = minf(want, top * 0.3)
+				elif passing == null and d < 3.0 * tile and _lane_clear(c, p, dir, r, -lane, d + 1.4 * tile):
+					# parked in our lane: swing out round it
+					c.passing = o
+					lat_target = -lane
+				else:
+					# wait behind it until the other lane is clear
+					limit = d - CAR_PARKED_GAP * tile
+					want = minf(want, top * clampf((d - CAR_PARKED_GAP * tile) / (1.2 * tile), 0.0, 1.0))
+			if float(c.v) < 0.05 * tile and want < 0.05 * tile:
+				c.stuck = float(c.get("stuck", 0.0)) + dt
+				if c.stuck > 3.0:
+					# never sit there for good: squeeze by
+					c.ghost = 1.5
+					c.stuck = 0.0
+			else:
+				c.stuck = 0.0
+
+		# --- speed, then along the road
+		c.v = move_toward(float(c.v), want, (8.0 if want < float(c.v) else 3.0) * tile * dt)
+		var step: float = minf(float(c.v) * dt, maxf(0.0, limit))
+		while step > 0.0 and i < path.size():
+			var seg: Vector3 = _flat3((path[i] as Vector3) - p)
+			if seg.length() <= step:
+				step -= seg.length()
+				p = Vector3((path[i] as Vector3).x, p.y, (path[i] as Vector3).z)
+				i += 1
+			else:
+				p += seg.normalized() * step
+				step = 0.0
+		c.track = p
+		# change lanes while rolling (a little even when stopped, to get round)
+		c.lat = move_toward(float(c.lat), lat_target, (float(c.v) * 0.6 + 0.25 * tile) * dt)
+
+		var at := p + r * float(c.lat)
+		at.y = (path[mini(i, path.size() - 1)] as Vector3).y
+		var move := _flat3(at - car.global_position)
+		var rot := car.global_basis.orthonormalized()
+		if move.length() > 0.0005 * tile:
+			var face := Basis.looking_at(-move.normalized(), Vector3.UP)
+			rot = rot.slerp(face, clampf(dt * 8.0, 0.0, 1.0))
+		car.global_transform = Transform3D(rot.scaled(Vector3.ONE * tile), at)
+	c.v = 0.0
+	c.passing = null
 	c.driving = false
+
+
+## The nearest visible car ahead of `c` (on the road at `p`, heading `dir`) in
+## the strip `lat` off the centre line: {car, d (how far ahead)}.
+func _car_ahead(c: Dictionary, p: Vector3, dir: Vector3, right: Vector3, lat: float) -> Dictionary:
+	var me := p + right * lat
+	var best := INF
+	var who = null
+	for o in _cars:
+		if o == c or not is_instance_valid(o.node) or not (o.node as Node3D).visible:
+			continue
+		var rel := _flat3((o.node as Node3D).global_position - me)
+		var along := rel.dot(dir)
+		if along <= 0.05 * tile or along >= best:
+			continue
+		if absf(rel.dot(right)) < CAR_WIDTH * tile:
+			best = along
+			who = o
+	return {"car": who, "d": best}
+
+
+## True if nothing is in the lane `lat` off the centre line from just behind
+## the car to `reach` ahead of it.
+func _lane_clear(c: Dictionary, p: Vector3, dir: Vector3, right: Vector3, lat: float, reach: float) -> bool:
+	var me := p + right * lat
+	for o in _cars:
+		if o == c or not is_instance_valid(o.node) or not (o.node as Node3D).visible:
+			continue
+		var rel := _flat3((o.node as Node3D).global_position - me)
+		var along := rel.dot(dir)
+		if along > -0.7 * tile and along < reach and absf(rel.dot(right)) < CAR_WIDTH * tile:
+			return false
+	return true
 
 
 ## Two officers hop out and go to the pile; the car moves on.
@@ -466,13 +594,34 @@ func _looter_later(e: Dictionary, delay: float) -> void:
 	var f: Array = _faces(box).pick_random()
 	var n: Vector3 = f[1]
 	var side := Vector3(n.z, 0, -n.x) * _rng.randf_range(-0.6, 0.6) * float(f[2])
+	var at: Vector3 = f[0] + side + n * 0.06 * tile
+	at.y = ground_y
+	# out of the shop and off down the street or alley, not through the walls
+	# (old_quarter_quake.gd knows where the buildings are)
+	var route: Array[Vector3] = []
+	if _oq and _oq.has_method("_escape_route"):
+		for k in 6:
+			f = _faces(box).pick_random()
+			n = f[1]
+			side = Vector3(n.z, 0, -n.x) * _rng.randf_range(-0.6, 0.6) * float(f[2])
+			at = f[0] + side + n * 0.08 * tile
+			at.y = ground_y
+			if _oq._free_run(at, n, e.b) > 0.0:
+				route = _oq._escape_route(at, n, e.b, 5.0, 9.0)
+				if not route.is_empty():
+					break
+		if route.is_empty():
+			return
 	var p := QuakePerson.new()
 	p.scale = Vector3.ONE * PEOPLE_SCALE * tile
 	_fx.add_child(p)
-	var at: Vector3 = f[0] + side + n * 0.06 * tile
-	p.start_run(Vector3(at.x, ground_y, at.z), n.rotated(Vector3.UP, _rng.randf_range(-0.5, 0.5)), ground_y)
+	var toward: Vector3 = route[0] - at if not route.is_empty() else n.rotated(Vector3.UP, _rng.randf_range(-0.5, 0.5))
+	p.start_run(at, toward, ground_y)
 	p.run_speed = _rng.randf_range(0.7, 0.95) * tile
 	p.run_time = 12.0
+	if not route.is_empty():
+		p.wobble = 0.06
+		p.route = route
 	# the loot: a cardboard box held in front
 	var loot := MeshInstance3D.new()
 	var bm := BoxMesh.new()
@@ -570,10 +719,29 @@ func _make_car(k: int) -> Node3D:
 	return car
 
 
-func _put_car(car: Node3D, at: Vector3, toward: Vector3) -> void:
+## Put the car on the road at `at` (centre line), in its lane, facing `toward`.
+func _put_car(c: Dictionary, at: Vector3, toward: Vector3) -> void:
+	var car: Node3D = c.node
 	var d := _flat3(toward - at).normalized()
-	var b := Basis.looking_at(-d, Vector3.UP) if d != Vector3.ZERO else Basis()
-	car.global_transform = Transform3D(b.scaled(Vector3.ONE * tile), at)
+	if d == Vector3.ZERO:
+		d = Vector3.FORWARD
+	var b := Basis.looking_at(-d, Vector3.UP)
+	c.track = at
+	c.heading = d
+	c.right = d.cross(Vector3.UP).normalized()
+	c.lat = LANE * tile
+	c.v = 0.0
+	car.global_transform = Transform3D(b.scaled(Vector3.ONE * tile), at + (c.right as Vector3) * float(c.lat))
+
+
+## True if no other car on screen is within `r` of `at`.
+func _spot_free(c: Dictionary, at: Vector3, r: float) -> bool:
+	for o in _cars:
+		if o == c or not is_instance_valid(o.node) or not (o.node as Node3D).visible:
+			continue
+		if _flat((o.node as Node3D).global_position).distance_to(_flat(at)) < r:
+			return false
+	return true
 
 
 func _plain_car() -> Node3D:

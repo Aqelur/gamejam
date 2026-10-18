@@ -165,6 +165,7 @@ func prepare(city: Node3D, ending) -> bool:
 		_hosp.add_child(_cracks)
 		_cracks.setup(_hosp)
 		_cracks.show_now()
+	_collect_blockers(city)
 	if not built:
 		mode = Mode.NONE
 	elif not cracked:
@@ -601,9 +602,11 @@ func _triage(crowded: bool) -> void:
 		_lay_out(Rect2(-2.4, 2.15, 2.8, 0.55), 8, false)
 
 
-## The injured laid out on the ground in `area` (hospital-local x/z), some
-## under blankets, people kneeling by them, and (`helpless`) a few standing
-## waving for help that isn't coming.
+## The injured brought here, sitting up on the ground in `area`
+## (hospital-local x/z), most with a blanket round their shoulders, people
+## kneeling by them, and (`helpless`) a few standing waving for help that
+## isn't coming. (They used to be laid flat, which read as people stuck
+## sideways in the ground.)
 func _lay_out(area: Rect2, count: int, helpless := true) -> void:
 	var spots: Array[Vector3] = []
 	var tries := 0
@@ -620,10 +623,11 @@ func _lay_out(area: Rect2, count: int, helpless := true) -> void:
 			spots.append(p)
 	for i in spots.size():
 		var p: Vector3 = spots[i]
-		var yaw := PI * 0.5 + _rng.randf_range(-0.35, 0.35) + (PI if i % 3 == 0 else 0.0)
-		_lying(p, yaw, BLANKETS[i % BLANKETS.size()] if _rng.randf() < 0.7 else Color.TRANSPARENT, 0.0)
+		# facing out, roughly towards the road (+z), each a little different
+		var yaw := _rng.randf_range(-0.7, 0.7)
+		_sitting(p, yaw, BLANKETS[i % BLANKETS.size()] if _rng.randf() < 0.7 else Color.TRANSPARENT)
 		if i % 3 == 1:
-			_kneeler(p + Vector3(0.0, 0.0, 0.13), p)
+			_kneeler(p + Vector3(sin(yaw), 0.0, cos(yaw)) * 0.13, p)
 	if not helpless:
 		return
 	for i in 4:
@@ -646,6 +650,37 @@ func _lying(at: Vector3, yaw: float, blanket: Color, lift: float) -> Node3D:
 		var m := _block(_scene, Vector3(0.075, 0.012, 0.12) * PERSON,
 			at - head * 0.025 * PERSON + Vector3.UP * (lift + 0.043 * PERSON), _mat(blanket))
 		m.rotation.y = yaw
+	return p
+
+
+## Someone hurt, sitting up on the ground at `at`, legs out in front, facing
+## along `yaw` (0 = +z, hospital-local), hunched over, holding an arm; a
+## blanket round their shoulders unless it's clear.
+func _sitting(at: Vector3, yaw: float, blanket: Color) -> QuakePerson:
+	var p := QuakePerson.new()
+	p.set_process(false)
+	_scene.add_child(p)
+	# QuakePerson faces -z: turn it round to face +z, then by `yaw`
+	p.transform = Transform3D(Basis(Vector3.UP, yaw + PI).scaled(Vector3.ONE * PERSON), at)
+	var rig = p.get("_rig")
+	if rig is Node3D:
+		var lean := 0.12   # a little back, weight on the hands
+		(rig as Node3D).position.y = -0.056
+		(rig as Node3D).rotation = Vector3(lean, 0.0, 0.0)
+		for k in ["_leg_l", "_leg_r"]:
+			var leg = p.get(k)
+			if leg is Node3D:
+				# straight out in front, flat on the ground
+				(leg as Node3D).rotation = Vector3(PI * 0.5 - lean, 0.0, (0.08 if k == "_leg_l" else -0.08))
+		var arm_l = p.get("_arm_l")
+		var arm_r = p.get("_arm_r")
+		if arm_l is Node3D:
+			(arm_l as Node3D).rotation = Vector3(0.55, 0.0, 0.15)
+		if arm_r is Node3D:
+			# hugging the hurt arm
+			(arm_r as Node3D).rotation = Vector3(1.25, 0.0, -0.45)
+		if blanket.a > 0.0:
+			_block(rig as Node3D, Vector3(0.05, 0.05, 0.04), Vector3(0.0, 0.106, 0.002), _mat(blanket))
 	return p
 
 
