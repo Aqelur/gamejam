@@ -748,7 +748,7 @@ func _drive(t: Dictionary, path: Array, time: float) -> void:
 ## Parked: ladder up toward the fire, then the water comes on.
 func _parked(t: Dictionary) -> void:
 	t.driving = false
-	var truck: Node3D = t.node
+	var truck = t.node
 	if not is_instance_valid(truck):
 		return
 	var e: Dictionary = t.target

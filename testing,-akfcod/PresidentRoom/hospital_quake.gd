@@ -497,7 +497,7 @@ func _shake_neighbours() -> void:
 func _update_neighbours() -> void:
 	var any := false
 	for s in _neighbours:
-		var n: Node3D = s.node
+		var n = s.node
 		if not is_instance_valid(n):
 			continue
 		var orig: Transform3D = s.orig

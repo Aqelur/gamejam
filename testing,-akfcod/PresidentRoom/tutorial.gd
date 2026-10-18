@@ -448,7 +448,7 @@ func _restore_after_cue(bus: int, held: Array[Dictionary], gen: int) -> void:
 	if _held_audio and bus >= 0:
 		AudioServer.set_bus_mute(bus, true)
 	for item in held:
-		var player: Node = item.player
+		var player = item.player
 		if is_instance_valid(player):
 			player.set("volume_db", item.db)
 

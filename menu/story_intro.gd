@@ -322,7 +322,7 @@ func _restore_master_mute() -> void:
 	if bus >= 0 and _mute_master_again:
 		AudioServer.set_bus_mute(bus, true)
 	for item in _ducked:
-		var player := item.player as Node
+		var player = item.player
 		if is_instance_valid(player):
 			player.volume_db = item.db
 	_ducked.clear()

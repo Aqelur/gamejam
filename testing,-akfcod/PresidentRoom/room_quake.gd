@@ -355,7 +355,7 @@ func _fall(n: Node3D, v: Vector3, w: Vector3, floor_y: float, flat := false) -> 
 func _update_falling(delta: float) -> void:
 	for i in range(_falling.size() - 1, -1, -1):
 		var f: Dictionary = _falling[i]
-		var n: Node3D = f.n
+		var n = f.n
 		if not is_instance_valid(n):
 			_falling.remove_at(i)
 			continue

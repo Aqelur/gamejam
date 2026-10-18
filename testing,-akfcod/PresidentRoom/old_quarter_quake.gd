@@ -444,7 +444,7 @@ func _process(delta: float) -> void:
 				_wave_pm = null
 				get_tree().create_timer(3.0, false).timeout.connect(_wave_dust.queue_free)
 	for s in _props:
-		var n: Node3D = s.node
+		var n = s.node
 		if not is_instance_valid(n):
 			continue
 		var lt: float = _t - s.delay

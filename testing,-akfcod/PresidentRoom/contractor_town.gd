@@ -846,7 +846,7 @@ func wait_restart() -> void:
 			break
 		was_down = down
 	pulse.kill()
-	get_tree().set_meta(StoryIntro.REPLAY_META, true)
+	get_tree().set_meta(&"replay_after_ending", true)   # = StoryIntro.REPLAY_META (menu/story_intro.gd)
 	get_tree().change_scene_to_file("res://menu/story_intro.tscn")
 
 

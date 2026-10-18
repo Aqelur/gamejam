@@ -398,9 +398,9 @@ func _patrol(c: Dictionary, sites: Array, delay: float) -> void:
 ## parked (or stuck) in its lane once the other lane is clear, instead of
 ## driving through it.
 func _drive(c: Dictionary, path: Array) -> void:
-	var car: Node3D = c.node
-	if path.size() < 2 or not is_instance_valid(car):
+	if path.size() < 2 or not is_instance_valid(c.node):
 		return
+	var car: Node3D = c.node
 	c.driving = true
 	var top := CAR_SPEED * tile
 	var lane := LANE * tile
