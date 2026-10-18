@@ -135,7 +135,7 @@ func witness_shot() -> Array:
 	var s := street_shot()
 	var pos: Vector3 = s[0]
 	var look: Vector3 = s[1]
-	pos.y = _street_y + 0.155 * _tile
+	pos.y = _street_y + 0.152 * 1.1 * _tile
 	look.y = _street_y + 0.22 * _tile
 	return [pos, look, Vector3.ZERO]
 

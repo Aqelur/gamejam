@@ -1,3 +1,4 @@
+class_name StoryIntro
 extends Control
 
 ## Start damgasından sonra, başkan odasından önce.
@@ -7,13 +8,16 @@ extends Control
 const NEXT_SCENE := "res://PresidentRoom/president_room.tscn"
 const CHARS_PER_SECOND := 26.0
 
+## Bir koşu bitip yeniden başlayınca konur. Düz Start bunu görmez.
+const REPLAY_META := &"replay_after_ending"
+const OPENING := "Last time, the sirens never stopped."
+
 const LINES: PackedStringArray = [
-	"Last time, they were still shouting. The sirens never stopped.",
 	"You're the mayor.",
-	"Experts came after. A threat too big for a small name. They call it the big one. The day? They don't have that.",
-	"Until then this office is a mess. People pile in. Papers hit the desk. Someone is always yelling.",
-	"Green stamp. Red stamp. APPROVED or DENIED. The town holds, or history repeats itself, on which one you pick.",
-	"And that's the mayor's call.",
+	"They call it the big one. They don't have the day.",
+	"Until then, papers hit this desk.",
+	"Green stamp or red. The town holds, or it doesn't.",
+	"That's the mayor's call.",
 ]
 
 const SIREN_DB := -6.0
@@ -30,6 +34,8 @@ const CROWD_BUS := &"StoryCrowd"
 @onready var _crowd: AudioStreamPlayer = %Crowd
 
 var _room: Node
+var _lines: PackedStringArray = LINES
+var _replay := false
 var _index := 0
 var _shown := false
 var _leaving := false
@@ -46,7 +52,13 @@ func _ready() -> void:
 	%SkipButton.pressed.connect(_leave)
 	_warm_desk()
 	_lift_master_mute()
-	_play_street()
+	_replay = bool(get_tree().get_meta(REPLAY_META, false))
+	if _replay:
+		_lines = LINES.duplicate()
+		_lines.insert(0, OPENING)
+		_play_street()
+	else:
+		_play_music()
 	_show_line(0)
 	var open := create_tween()
 	open.tween_property(_fade, "color:a", 0.0, 0.65)
@@ -193,13 +205,13 @@ func _show_line(index: int) -> void:
 	_index = index
 	_shown = false
 	_hint.modulate.a = 0.0
-	_body.text = LINES[index]
+	_body.text = _lines[index]
 	_body.visible_characters = 0
 	if _reveal != null and is_instance_valid(_reveal):
 		_reveal.kill()
-	var seconds := maxf(LINES[index].length() / CHARS_PER_SECOND, 0.8)
+	var seconds := maxf(_lines[index].length() / CHARS_PER_SECOND, 0.8)
 	_reveal = create_tween()
-	_reveal.tween_property(_body, "visible_characters", LINES[index].length(), seconds)
+	_reveal.tween_property(_body, "visible_characters", _lines[index].length(), seconds)
 	_reveal.finished.connect(_on_line_shown, CONNECT_ONE_SHOT)
 
 
@@ -238,10 +250,10 @@ func _advance() -> void:
 		_body.visible_characters = -1
 		_on_line_shown()
 		return
-	if _index == 0:
+	if _index == 0 and _replay:
 		_pull_street()
 		_play_music()
-	if _index + 1 < LINES.size():
+	if _index + 1 < _lines.size():
 		_show_line(_index + 1)
 	else:
 		_leave()

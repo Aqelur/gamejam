@@ -151,26 +151,26 @@ func _her() -> String:
 
 
 func intro_line() -> String:
-	return "Across town, at the same moment. On the third floor of an office block, *%s* is working through lunch." \
+	return "Same moment. *%s*, third floor, working through lunch." \
 		% person_name
 
 
 ## Read while it happens.
 func react_line() -> String:
 	if aware:
-		return "*%s* knows exactly what to do, because *you* made sure this city learned it. *Drop, cover, hold on*: under the desk, one hand on its leg, the other over %s neck." \
-			% [person_name, _her()]
-	return "Nobody ever told *%s* what to do in an earthquake. %s panics, and runs for the *window*." \
+		return "*%s* drops under the desk. *Drop, cover, hold on*." \
+			% person_name
+	return "Nobody told *%s*. %s runs for the *window*." \
 		% [person_name, _she().capitalize()]
 
 
 ## Read once it's over.
 func after_line() -> String:
 	if aware:
-		return "The ceiling lamp comes down right where %s was sitting. When the shaking stops, %s crawls out without a scratch. Your work on *public awareness* just saved %s life." \
-			% [_she(), _she(), _her()]
-	return "%s jumped from the third floor. The building %s ran from is still standing. It wasn't the earthquake that broke %s legs, it was the *fall*." \
-		% [_she().capitalize(), _she(), _her()]
+		return "The lamp lands where %s sat. %s crawls out. *Awareness* saved %s life." \
+			% [_she(), _she().capitalize(), _her()]
+	return "%s jumped. The building stands. The *fall* broke %s legs." \
+		% [_she().capitalize(), _her()]
 
 
 # ================================================================ camera

@@ -1,13 +1,20 @@
 extends CharacterBody3D
 ## Ten seconds in the street as the quake hits. The city camera sits in the
 ## head. move_left / move_right / move_up / move_down walk. The mouse aims.
-## Looking down shows the arms and legs; they swing while walking.
+## The body is the same height as a street QuakePerson (0.17 tall at 1.1).
+## Looking ahead hides the arms; looking down shows the hands at the bottom.
 
 
 const SECONDS := 10.0
 const LOOK_SENS := 0.0022
 const PITCH_MIN := -1.15
 const PITCH_MAX := 1.05
+## QuakePerson is built 0.17 units tall and spawned at 1.1 * tile.
+const PEOPLE_SCALE := 1.1
+const PERSON_HEIGHT := 0.17
+## Head centre on that model. The camera sits here so eye lines match.
+const EYE_LOCAL := 0.152
+const ARM_PITCH := 1.05
 
 var speed := 12.0
 var _tile := 27.0
@@ -19,6 +26,7 @@ var _cam_fov := 48.0
 var _floor: StaticBody3D
 var _head: Node3D
 var _visual: Node3D
+var _rig: Node3D
 var _arm_l: Node3D
 var _arm_r: Node3D
 var _leg_l: Node3D
@@ -28,7 +36,7 @@ var _leg_r: Node3D
 func setup(city: Node3D, cam: Camera3D, eye: Vector3, look: Vector3, ground_y: float, tile: float) -> void:
 	_tile = tile
 	speed = 1.44 * tile
-	var height := 0.187 * tile
+	var height := PERSON_HEIGHT * PEOPLE_SCALE * tile
 	_build_body(height)
 	_build_floor(city, Vector3(eye.x, ground_y, eye.z), tile)
 	city.add_child(self)
@@ -56,6 +64,9 @@ func add_look(relative: Vector2) -> void:
 
 
 func finish() -> void:
+	var ending := get_tree().root.find_child("EarthquakeEnding", true, false)
+	if ending and ending.has_method("release_body_shake"):
+		ending.release_body_shake()
 	if _cam and is_instance_valid(_cam) and _cam_parent and is_instance_valid(_cam_parent):
 		var kept := _cam.global_transform
 		_cam.reparent(_cam_parent)
@@ -108,29 +119,39 @@ func _build_floor(city: Node3D, at: Vector3, tile: float) -> void:
 func _build_body(height: float) -> void:
 	collision_layer = 2
 	collision_mask = 2
+	var s := height / PERSON_HEIGHT
 	var capsule := CollisionShape3D.new()
 	var shape := CapsuleShape3D.new()
-	shape.radius = 0.028 * _tile
-	shape.height = height * 0.62
+	shape.radius = 0.02 * s
+	shape.height = height
 	capsule.shape = shape
-	capsule.position.y = shape.height * 0.5
+	capsule.position.y = height * 0.5
 	add_child(capsule)
 
 	_visual = Node3D.new()
 	add_child(_visual)
+	_rig = Node3D.new()
+	_visual.add_child(_rig)
 	var shirt := Color(0.22, 0.38, 0.62)
 	var pants := Color(0.14, 0.15, 0.2)
 	var skin := Color(0.84, 0.66, 0.5)
-	_box(_visual, Vector3(0, 0.64 * height, 0.06 * height), Vector3(0.28 * height, 0.28 * height, 0.14 * height), shirt)
-	_leg_l = _limb(_visual, Vector3(-0.07 * height, 0.48 * height, 0), Vector3(0.09 * height, 0.46 * height, 0.1 * height), pants, skin)
-	_leg_r = _limb(_visual, Vector3(0.07 * height, 0.48 * height, 0), Vector3(0.09 * height, 0.46 * height, 0.1 * height), pants, skin)
-	_arm_l = _limb(_visual, Vector3(-0.18 * height, 0.8 * height, -0.16 * height), Vector3(0.07 * height, 0.4 * height, 0.08 * height), shirt, skin)
-	_arm_r = _limb(_visual, Vector3(0.18 * height, 0.8 * height, -0.16 * height), Vector3(0.07 * height, 0.4 * height, 0.08 * height), shirt, skin)
-	_arm_l.rotation.x = -0.4
-	_arm_r.rotation.x = -0.4
+	_box(_rig, Vector3(0, 0.1 * s, 0.01 * s), Vector3(0.046 * s, 0.072 * s, 0.04 * s), shirt)
+	_leg_l = _limb(_rig, Vector3(-0.012 * s, 0.068 * s, 0), Vector3(0.018 * s, 0.068 * s, 0.02 * s), pants, skin)
+	_leg_r = _limb(_rig, Vector3(0.012 * s, 0.068 * s, 0), Vector3(0.018 * s, 0.068 * s, 0.02 * s), pants, skin)
+	# Close to the chest and pitched forward, so the sleeves stay out of the
+	# side of the view and the hands sit at the bottom when looking down.
+	var arm := Vector3(0.014 * s, 0.05 * s, 0.014 * s)
+	_arm_l = _limb(_rig, Vector3(-0.016 * s, 0.118 * s, -0.02 * s), arm, shirt, skin)
+	_arm_r = _limb(_rig, Vector3(0.016 * s, 0.118 * s, -0.02 * s), arm, shirt, skin)
+	_pose_arms(0.0)
 	_head = Node3D.new()
-	_head.position = Vector3(0, 0.155 / 0.187 * height, -0.04 * height)
+	_head.position = Vector3(0, EYE_LOCAL * s, -0.008 * s)
 	_visual.add_child(_head)
+
+
+func _pose_arms(swing: float) -> void:
+	_arm_l.rotation = Vector3(ARM_PITCH + swing, 0.0, 0.2)
+	_arm_r.rotation = Vector3(ARM_PITCH - swing, 0.0, -0.2)
 
 
 func _limb(parent: Node3D, pivot: Vector3, size: Vector3, cloth: Color, skin: Color) -> Node3D:
@@ -162,9 +183,8 @@ func _step(delta: float, amount: float) -> void:
 		_phase += delta * 9.0
 	else:
 		_phase = lerpf(_phase, 0.0, minf(1.0, delta * 6.0))
-	var swing := sin(_phase) * (0.75 if moving else 0.0)
+	var swing := sin(_phase) * (0.35 if moving else 0.0)
 	_leg_l.rotation.x = swing
 	_leg_r.rotation.x = -swing
-	_arm_l.rotation.x = -0.4 - swing
-	_arm_r.rotation.x = -0.4 + swing
-	_visual.position.y = absf(sin(_phase)) * 0.025 * _tile if moving else 0.0
+	_pose_arms(sin(_phase) * (0.18 if moving else 0.0))
+	_visual.position.y = absf(sin(_phase)) * 0.012 * PEOPLE_SCALE * _tile if moving else 0.0

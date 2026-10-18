@@ -15,6 +15,6 @@ approve_label = "Set them up"
 approve_money = -10
 approve_readiness = 10
 approve_bureaucracy = 5
-approve_caption = "You approved the *shelter tents*. Rows of tents and evacuation signs now stand ready in *Central Park*, so if the big one hits at night, everyone has somewhere to sleep."
+approve_caption = "*Shelter tents* are up in *Central Park*, ready for the night."
 approve_action = 9
 note = "Tür: takas. Zincir: park, 1. halka. Onaylanınca gün sonunda kamera Central Park'ın doğu çimine iner: park girişlerinde tahliye tabelaları yükselir, ana patikanın üstüne yeşil EMERGENCY SHELTER kapısı kurulur, yanına erzak kasaları konur ve çadırlar sıra sıra açılır (park_tents.gd). Kamp oyun boyunca kalır. Reddedilince şehirde görsel bir şey olmaz (deny_caption boş, aksiyon NONE)."

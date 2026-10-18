@@ -83,13 +83,13 @@ extends Node
 ##
 ## THE WALKOUT. If a stamp leaves Money at 0 the day ends there and then (the
 ## rest of its papers are dropped). Its evening plays as usual, but there is
-## no next morning and no earthquake: nobody has been paid in months, and
+## no next morning and no earthquake: nobody was paid for the week, and
 ## the town's emergency workers walk out (_play_walkout, walkout.gd). Every
 ## service that was built (hospital, fire station, police station) goes dark
 ## and gets a CLOSED sign on its door, then the president's state car slips
 ## out of the palace alone and quietly leaves town along the back street.
-## Then a card on black with what happened and a tip, and a click starts the
-## game again. room.test_walkout skips the desk and plays it straight away.
+## Then a card on black with what happened, and the closing lines in
+## menu/walkout_outro.tscn. room.test_walkout skips the desk and plays it straight away.
 ##
 ## THE CONTRACTOR'S TOWN. If a stamp leaves Bureaucracy at 0 (and Money is
 ## not also gone, which plays the walkout instead) the day ends there and
@@ -127,6 +127,7 @@ const StreetWitness := preload("res://PresidentRoom/street_witness.gd")
 const PROPOSALS_DIR := "res://PresidentRoom/proposals"
 const CITY_SCENE := "res://City/city.tscn"
 const TITLE_SCENE := "res://menu/title_screen.tscn"
+const WALKOUT_OUTRO := "res://menu/walkout_outro.tscn"
 const FONT_BOLD := "res://PresidentRoom/fonts/Montserrat-Bold.ttf"
 const FONT_BLACK := "res://PresidentRoom/fonts/Montserrat-ExtraBold.ttf"
 const SKY_FLASH := Color(0.93, 0.96, 1.0)
@@ -600,7 +601,7 @@ func end_day() -> void:
 	_city_cam.global_transform = _bird
 	var bird_target := _ground_point(_bird)
 	_drift(_bird, bird_target, 4.0)
-	_kicker.text = "END OF DAY %d" % day
+	_kicker.text = "END OF DAY %d" % _shown_day()
 	_set_caption("")
 	_caption_box.modulate.a = 1.0
 	_show_kicker()
@@ -688,6 +689,11 @@ func _play_target(data: Resource, approved: bool, node: Node3D) -> void:
 		await _wait(2.8)
 
 
+## Desk days stay 1, 2, 3. The screen counts them a week apart: 1, 8, 15.
+func _shown_day() -> int:
+	return 1 + (day - 1) * 7
+
+
 func _back_to_office() -> void:
 	# fade to black, back at the desk, next day
 	_fade.color = Color(0, 0, 0, _fade.color.a)
@@ -702,7 +708,7 @@ func _back_to_office() -> void:
 	room.lock_camera(false)
 	day += 1
 	_deal()
-	_day_label.text = "DAY %d" % day
+	_day_label.text = "DAY %d" % _shown_day()
 	_day_label.modulate.a = 0.0
 	_day_label.visible = true
 	var d := create_tween()
@@ -881,19 +887,23 @@ func _play_ending() -> void:
 	_city.add_child(_rain)
 	_rain.setup(_city, _city_cam)
 
+	# Launch with `-- street` for the calm street, or `-- run` for the quake run.
+	var args := OS.get_cmdline_user_args()
+	var street := args.has("street") or args.has("run")
 	# 2. the time, on black
-	_next_beat()
-	_day_label.text = "THE NEXT DAY\n14:32"
-	_day_label.modulate.a = 0.0
-	_day_label.visible = true
-	var d_in := create_tween()
-	d_in.tween_property(_day_label, "modulate:a", 1.0, 0.8)
-	await _until_tween_ending(d_in)
-	await _ending_wait(2.0)
-	var d_out := create_tween()
-	d_out.tween_property(_day_label, "modulate:a", 0.0, 0.65)
-	await _until_tween_ending(d_out)
-	_day_label.visible = false
+	if not street:
+		_next_beat()
+		_day_label.text = "THE NEXT DAY\n14:32"
+		_day_label.modulate.a = 0.0
+		_day_label.visible = true
+		var d_in := create_tween()
+		d_in.tween_property(_day_label, "modulate:a", 1.0, 0.8)
+		await _until_tween_ending(d_in)
+		await _ending_wait(2.0)
+		var d_out := create_tween()
+		d_out.tween_property(_day_label, "modulate:a", 0.0, 0.65)
+		await _until_tween_ending(d_out)
+		_day_label.visible = false
 
 	_ending = EarthquakeEnding.new()
 	_ending.name = "EarthquakeEnding"
@@ -909,9 +919,11 @@ func _play_ending() -> void:
 	# (before the hospital: it counts the injured from the places before it).
 	var places: Array[Callable] = [_play_quake_old_quarter, _play_quake_rescue, _play_quake_room, _play_quake_fire,
 		_play_quake_park, _play_quake_hospital]
-	# Launch with `-- fire` to open this shot on its own.
+	# Launch with `-- fire`, `-- street` or `-- run` to open that shot on its own.
 	if OS.get_cmdline_user_args().has("fire"):
 		places = [_play_quake_fire]
+	elif street:
+		places = [_play_quake_old_quarter]
 	for play in places:
 		await play.call(_ending)
 
@@ -924,10 +936,10 @@ func _play_ending() -> void:
 
 # ================================================================ the walkout
 
-## Money is gone. The morning after, every service that was built shuts its
+## Money is gone. One week later, every service that was built shuts its
 ## doors, then the president's car slips out of town; a card on black says
-## what happened and what to learn from it. The game ends here: a click
-## starts the scene again. See walkout.gd.
+## what happened, then the closing lines in menu/walkout_outro.tscn.
+## See walkout.gd.
 func _play_walkout() -> void:
 	_watch(false)
 	# 1. out to black, tonight's scenes cleared away
@@ -949,7 +961,7 @@ func _play_walkout() -> void:
 		await _walkout.settle_buildings()
 
 		# 2. the time, on black
-		_day_label.text = "THE NEXT MORNING"
+		_day_label.text = "ONE WEEK LATER"
 		_day_label.modulate.a = 0.0
 		_day_label.visible = true
 		var d := create_tween()
@@ -1003,14 +1015,27 @@ func _play_walkout() -> void:
 		add_child(_walkout)
 		_walkout.setup(null, _font_bold, _font_black)
 
-	# 5. what happened, and what to take from it; a click starts again
+	# 5. what happened. A click skips the writing. Then the closing lines.
 	_kill(_orbit)
 	_kicker.text = ""
-	await _walkout.show_card(_ui)
-	_skip = false
+	_watch(true)
+	await _until_done(_walkout.show_card.bind(_ui))
+	_walkout.reveal_card()
 	await _narrate(Walkout.TEXT, null)
-	await _walkout.show_tip()
-	await _walkout.wait_restart()
+	_watch(false)
+	_skip = false
+	await _open_walkout_outro()
+
+
+## The closing lines in menu/walkout_outro.tscn. That scene already opens on
+## black for the same beat as the earthquake outro, so the card is not faded
+## out first: doing both left the screen empty twice.
+func _open_walkout_outro() -> void:
+	if is_instance_valid(_voice):
+		_voice.stop()
+	if _tts_checked and _tts_voice != "":
+		DisplayServer.tts_stop()
+	get_tree().change_scene_to_file(WALKOUT_OUTRO)
 
 
 # ================================================================ the contractor's town
@@ -1124,22 +1149,24 @@ func _play_quake_old_quarter(ending: EarthquakeEnding) -> void:
 		return
 	_oq_quake = oq
 
-	# 1. a calm street
-	_next_beat()
-	var low: Array = works.street_shot()
-	_kill(_orbit)
-	_city_cam.look_at_from_position(low[0], low[1], Vector3.UP)
-	_glide(low[0], low[1], 0.05, low[2])
-	ending.begin_place("Old Quarter", 0.0)
-	_caption_box.modulate.a = 1.0
-	_show_kicker()
-	_fade_in(0.8)
-	await _ending_wait(0.8)
-	var intro: String = oq.intro_line()
-	_type_caption(intro)
-	ending.rumble(0.08, 3.0)   # a faint tremor first
-	await _narrate(intro.replace("*", ""), null)
-	await _ending_wait(ENDING_LINGER)
+	# `-- run` drops into the street as the quake hits, so the run can be tried.
+	if not OS.get_cmdline_user_args().has("run"):
+		# 1. a calm street
+		_next_beat()
+		var low: Array = works.street_shot()
+		_kill(_orbit)
+		_city_cam.look_at_from_position(low[0], low[1], Vector3.UP)
+		_glide(low[0], low[1], 0.05, low[2])
+		ending.begin_place("Old Quarter", 0.0)
+		_caption_box.modulate.a = 1.0
+		_show_kicker()
+		_fade_in(0.8)
+		await _ending_wait(0.8)
+		var intro: String = oq.intro_line()
+		_type_caption(intro)
+		ending.rumble(0.08, 3.0)   # a faint tremor first
+		await _narrate(intro.replace("*", ""), null)
+		await _ending_wait(ENDING_LINGER)
 
 	# 2. a man in the street watches the walls fall and the people run,
 	#    then this same camera rises over the quarter
@@ -1149,8 +1176,16 @@ func _play_quake_old_quarter(ending: EarthquakeEnding) -> void:
 	ending.rumble(1.0, OldQuarterQuake.SHAKE_TIME)
 	oq.start()
 	var eye: Array = works.witness_shot()
-	_glide(eye[0], eye[1], 0.55)
+	if OS.get_cmdline_user_args().has("run"):
+		_kill(_orbit)
+		ending.begin_place("Old Quarter", 0.0)
+		_caption_box.modulate.a = 0.0
+		_city_cam.look_at_from_position(eye[0], eye[1], Vector3.UP)
+		_fade_in(0.35)
+	else:
+		_glide(eye[0], eye[1], 0.55)
 	await _walk_the_street(eye[0], eye[1], float(works._street_y), float(works._tile))
+
 	var wide: Array = works.district_shot()
 	_glide(wide[0], wide[1], 3.2, wide[2])
 	var crash := 0.0
@@ -1512,7 +1547,7 @@ func _play_quake_fire(ending: EarthquakeEnding) -> void:
 	var line: String = mf.fire_line()
 	_type_caption(line)
 	await _narrate(line.replace("*", ""), null)
-	await _ending_wait(1.1)
+	await _ending_wait(0.75)
 
 	# 3. minutes later: the trucks come, or nobody does
 	_next_beat()
@@ -1534,14 +1569,14 @@ func _play_quake_fire(ending: EarthquakeEnding) -> void:
 	_type_caption(line)
 	await _narrate(line.replace("*", ""), null)
 	await _ending_wait(ENDING_LINGER)
-	var left := 25.0
+	var left := 16.0
 	while left > 0.0 and not mf.is_done():
 		_hurry_ending()
 		await get_tree().process_frame
 		left -= get_process_delta_time()
 	if Engine.time_scale != 1.0:
 		Engine.time_scale = 1.0
-	await _ending_wait(1.15)
+	await _ending_wait(0.8)
 
 	# 4. what it cost (and what the crews saved)
 	_next_beat()

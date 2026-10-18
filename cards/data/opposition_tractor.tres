@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="CardData" format=3]
+
+[ext_resource type="Script" path="res://cards/card_data.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://denemegörselleri/5.jpeg" id="2_image"]
+
+[resource]
+script = ExtResource("1_script")
+id = "opposition_tractor"
+character_name = "Opposition Leader"
+image = ExtResource("2_image")
+text = "Mayor, you went down to the bakery and played judge over a tractor. Half the street says you pick favorites. Sign this apology, or I read the whole visit out at tonight's council meeting."
+denied_effect = Vector4i(-10, 0, 0, 0)
+approved_effect = Vector4i(0, -10, 0, 0)

@@ -69,6 +69,12 @@ var _low := 0.0
 var _crack := 0.0
 var _city: Node3D
 var _fade: ColorRect
+## While the player is the man in the street, the quake shakes the city and
+## leaves him (and the camera on his head) where he stands.
+var _body_shake := Vector3.ZERO
+var _city_base := Vector3.ZERO
+var _city_base_set := false
+var _shaken_city: Node3D
 
 
 func setup(p_choices: Dictionary, ui: CanvasLayer, kicker: Label, cam: Camera3D, tile: float,
@@ -157,12 +163,78 @@ func _process(delta: float) -> void:
 		var reach := clampf(_cam.global_position.y / (2.0 * _tile), 1.0, 3.0)
 		var amp := 0.06 * _tile * s * reach
 		# fast jitter plus a slower roll of the ground underneath
-		_cam.h_offset = (0.75 * _noise.get_noise_2d(_t * 22.0, 0.0) + 0.45 * _noise.get_noise_2d(_t * 4.5, 50.0)) * amp
-		_cam.v_offset = (0.75 * _noise.get_noise_2d(0.0, _t * 22.0) + 0.45 * _noise.get_noise_2d(50.0, _t * 4.5)) * amp
+		var hx := (0.75 * _noise.get_noise_2d(_t * 22.0, 0.0) + 0.45 * _noise.get_noise_2d(_t * 4.5, 50.0)) * amp
+		var vy := (0.75 * _noise.get_noise_2d(0.0, _t * 22.0) + 0.45 * _noise.get_noise_2d(50.0, _t * 4.5)) * amp
+		var witness := _street_witness()
+		if witness:
+			_cam.h_offset = 0.0
+			_cam.v_offset = 0.0
+			_shake_city_around(witness, _cam.global_basis * Vector3(-hx, -vy, 0.0))
+		else:
+			release_body_shake()
+			_cam.h_offset = hx
+			_cam.v_offset = vy
 	_feed_sound(s)
 
 
+## The man in the street, if the city camera is sitting in his head.
+func _street_witness() -> Node3D:
+	if not is_instance_valid(_cam):
+		return null
+	var n: Node = _cam
+	while n:
+		if n.name == "StreetWitness":
+			return n as Node3D
+		n = n.get_parent()
+	return null
+
+
+## Slide the city by `shift` and put the player and his floor back, so the
+## street shakes and his body stays glued to the lens.
+func _shake_city_around(witness: Node3D, shift: Vector3) -> void:
+	var city := witness.get_parent() as Node3D
+	if city == null:
+		return
+	if not _city_base_set:
+		_city_base = city.global_position
+		_city_base_set = true
+		_shaken_city = city
+	var stood := witness.global_position
+	var floor := city.get_node_or_null("WitnessFloor") as Node3D
+	var floor_at := floor.global_position if floor else Vector3.ZERO
+	city.global_position = _city_base + shift
+	witness.global_position = stood
+	if floor:
+		floor.global_position = floor_at
+	_body_shake = shift
+
+
+## Put the city back where it was before the on-foot shake.
+func release_body_shake() -> void:
+	if not _city_base_set:
+		_body_shake = Vector3.ZERO
+		return
+	var city := _shaken_city
+	var witness := _street_witness()
+	var stood := witness.global_position if witness else Vector3.ZERO
+	var floor: Node3D = null
+	var floor_at := Vector3.ZERO
+	if city and is_instance_valid(city):
+		floor = city.get_node_or_null("WitnessFloor") as Node3D
+		if floor:
+			floor_at = floor.global_position
+		city.global_position = _city_base
+		if witness:
+			witness.global_position = stood
+		if floor:
+			floor.global_position = floor_at
+	_body_shake = Vector3.ZERO
+	_city_base_set = false
+	_shaken_city = null
+
+
 func _exit_tree() -> void:
+	release_body_shake()
 	if is_instance_valid(_cam):
 		_cam.h_offset = 0.0
 		_cam.v_offset = 0.0
@@ -385,9 +457,9 @@ func _show_weight(total: int, summary: Control) -> Control:
 	for l: Control in [big, line1, line2]:
 		l.modulate.a = 0.0
 		words.add_child(l)
-	await _reveal_line(big, 0.7, 1.4)
-	await _reveal_line(line1, 0.7, 1.1)
-	await _reveal_line(line2, 0.9, 2.8)
+	await _reveal_line(big, 0.7, 1.0)
+	await _reveal_line(line1, 0.7, 0.8)
+	await _reveal_line(line2, 0.9, 1.8)
 	_shot()
 	t = create_tween()
 	t.tween_property(words, "modulate:a", 0.0, 1.0 * PACE)
@@ -472,7 +544,7 @@ func _show_weight(total: int, summary: Control) -> Control:
 	t = create_tween().set_parallel()
 	t.tween_property(screen, "modulate:a", 0.0, 2.0 * PACE)
 	t.tween_property(count, "modulate:a", 1.0, 2.0 * PACE).set_delay(0.7)
-	t.tween_method(func(k: float) -> void: place.call(1.0, 0.12 * k), 0.0, 1.0, 4.6 * PACE) \
+	t.tween_method(func(k: float) -> void: place.call(1.0, 0.12 * k), 0.0, 1.0, 3.2 * PACE) \
 		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 	await _until_tween(t)
 	screen.queue_free()
@@ -488,7 +560,7 @@ func _show_weight(total: int, summary: Control) -> Control:
 			m += int(n * 0.05)
 		var from_count := n * n
 		var to_count := mini(m * m, all)
-		var d := maxf(0.09, 2.15 * pow(0.86, step))
+		var d := maxf(0.07, 1.5 * pow(0.86, step))
 		var creep := 0.12 if step == 0 else 0.0
 		t = create_tween()
 		t.tween_method(func(k: float) -> void:
@@ -502,16 +574,16 @@ func _show_weight(total: int, summary: Control) -> Control:
 			break
 		n = m
 		if step <= 3:
-			await _hold(0.7 - step * 0.12)
+			await _hold(0.45 - step * 0.08)
 
 	# --- all of them
 	field.settle(0, all, 1.0)
 	place.call(float(all), 0.0)
 	count.text = thousands(total)
-	await get_tree().create_timer(0.9).timeout
+	await get_tree().create_timer(0.55).timeout
 	t = create_tween()
-	t.tween_property(lost, "modulate:a", 1.0, 1.2)
-	t.tween_interval(2.4)
+	t.tween_property(lost, "modulate:a", 1.0, 0.9)
+	t.tween_interval(1.6)
 	await t.finished
 
 	# --- and then what it was for
@@ -559,10 +631,10 @@ func _blame(over: Control, counter: Control, total: int, field: ParkShrouds,
 		t = create_tween().set_parallel()
 		t.tween_property(dim, "color:a", 0.0, 3.5)
 		t.tween_method(func(k: float) -> void:
-			_cam.look_at_from_position(from_eye.lerp(high[0], k), from_look.lerp(high[1], k), Vector3.UP), 0.0, 1.0, 12.0) \
+			_cam.look_at_from_position(from_eye.lerp(high[0], k), from_look.lerp(high[1], k), Vector3.UP), 0.0, 1.0, 8.0) \
 			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 		await t.finished
-		await get_tree().create_timer(1.0).timeout
+		await get_tree().create_timer(0.65).timeout
 
 	# --- 3. over the city
 	t = create_tween()
@@ -571,7 +643,7 @@ func _blame(over: Control, counter: Control, total: int, field: ParkShrouds,
 	var blame_box := await _say(centre, [
 		["You were the Mayor.", Color.WHITE, 36],
 		["This was your city.", RED, 44]], false)
-	await get_tree().create_timer(2.0).timeout
+	await get_tree().create_timer(1.3).timeout
 
 	# --- 4. down onto the memorial
 	t = create_tween().set_parallel()
@@ -582,11 +654,11 @@ func _blame(over: Control, counter: Control, total: int, field: ParkShrouds,
 		var city_look: Vector3 = field.frame_city(aspect, fov)[1]
 		var mem: Array = field.frame_all(aspect, fov)
 		t.tween_method(func(k: float) -> void:
-			_cam.look_at_from_position(city_eye.lerp(mem[0], k), city_look.lerp(mem[1], k), Vector3.UP), 0.0, 1.0, 9.0) \
+			_cam.look_at_from_position(city_eye.lerp(mem[0], k), city_look.lerp(mem[1], k), Vector3.UP), 0.0, 1.0, 6.2) \
 			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	await t.finished
 	blame_box.queue_free()
-	await get_tree().create_timer(1.2).timeout
+	await get_tree().create_timer(0.8).timeout
 
 	# --- 5. one quiet line under it all
 	var after := _label("They don't get another chance. You do.", _font_bold, 26, Color.WHITE)
@@ -618,10 +690,10 @@ func _say(centre: Control, specs: Array, fade_out: bool) -> Control:
 		l.custom_minimum_size.x = 1100
 		l.modulate.a = 0.0
 		box.add_child(l)
-		t.tween_property(l, "modulate:a", 1.0, 1.1)
-		t.tween_interval(0.9 + 0.035 * l.text.length())
+		t.tween_property(l, "modulate:a", 1.0, 0.75)
+		t.tween_interval(0.6 + 0.024 * l.text.length())
 	if fade_out:
-		t.tween_interval(1.6)
+		t.tween_interval(1.1)
 		t.tween_property(box, "modulate:a", 0.0, 1.0)
 	await t.finished
 	if fade_out:

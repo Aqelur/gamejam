@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="CardData" format=3]
+
+[ext_resource type="Script" path="res://cards/card_data.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://denemegörselleri/1.jpeg" id="2_image"]
+
+[resource]
+script = ExtResource("1_script")
+id = "headman_locked_door"
+character_name = "The Headman"
+image = ExtResource("2_image")
+text = "Mayor, my neighbor sat outside your door until five. Then the clerks locked up and went home. He only wanted to ask about the bakery trash. Can you see him tomorrow, before he tells the whole street you were hiding?"
+denied_effect = Vector4i(-5, 0, 0, 0)
+approved_effect = Vector4i(5, 0, 0, 0)

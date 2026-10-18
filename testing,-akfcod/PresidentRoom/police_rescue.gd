@@ -202,29 +202,29 @@ func saved_money() -> float:
 ## Read as the place starts.
 func later_line() -> String:
 	if police:
-		return "Twenty minutes later, back in the *Old Quarter*. %s people are still alive under the rubble, and the sirens are already coming." \
+		return "Twenty minutes on. %s still alive under the rubble. Sirens coming." \
 			% EarthquakeEnding.thousands(trapped)
-	return "Twenty minutes later, back in the *Old Quarter*. %s people are still alive under the rubble, calling for help. No sirens are coming." \
+	return "Twenty minutes on. %s still alive under the rubble. No sirens." \
 		% EarthquakeEnding.thousands(trapped)
 
 
 ## Read while the digging goes on.
 func work_line() -> String:
 	if police:
-		return "Patrol cars from the new *police station* go street to street. At every pile they drop off officers, who climb on and dig with their bare hands."
-	return "There is no *police station*, and nobody to send. A few neighbours dig with their bare hands while looters slip into the broken shops."
+		return "Cars from the *police station* stop. Officers dig with their hands."
+	return "No *police station*. Neighbours dig. Looters slip into the shops."
 
 
 ## Read once it's over.
 func headline() -> String:
 	if police:
-		return "The *police* got there in time. Officers pulled %s out of the rubble alive, about %s more than anyone else could have." \
+		return "The *police* pulled %s out alive. About %s more than anyone else." \
 			% [_people(saved), EarthquakeEnding.thousands(saved_lives())]
 	if saved <= 0:
-		return "Without a *police station* there weren't enough hands. Nobody was dug out alive: %s died under the rubble waiting for help." \
+		return "No *police station*. Nobody dug out. %s died waiting." \
 			% _people(dead)
-	return "Without a *police station* there weren't enough hands. Only %s dug out alive, and %s died under the rubble waiting for help." \
-		% [_people(saved) + (" was" if saved == 1 else " were"), EarthquakeEnding.thousands(dead)]
+	return "No *police station*. Only %s dug out. %s died waiting." \
+		% [_people(saved), EarthquakeEnding.thousands(dead)]
 
 
 static func _people(n: int) -> String:
@@ -398,9 +398,9 @@ func _patrol(c: Dictionary, sites: Array, delay: float) -> void:
 ## parked (or stuck) in its lane once the other lane is clear, instead of
 ## driving through it.
 func _drive(c: Dictionary, path: Array) -> void:
-	if path.size() < 2 or not is_instance_valid(c.node):
-		return
 	var car: Node3D = c.node
+	if path.size() < 2 or not is_instance_valid(car):
+		return
 	c.driving = true
 	var top := CAR_SPEED * tile
 	var lane := LANE * tile

@@ -29,6 +29,15 @@ const ARROW_REPEAT := 2.9
 ## briefly opens it while every other player is held quiet.
 const STEP_CUE := "res://PresidentRoom/audio/menu_step.wav"
 const STEP_CUE_DB := -2.0
+## Gold ring sits this far outside the target, and breathes by RING_PULSE.
+const RING_PAD := 8.0
+const RING_PULSE := 5.0
+## Keep the ring and its arrow this far inside the screen.
+const SCREEN_MARGIN := 16.0
+## Arrow shaft above (or below) the ring, including the bob.
+const ARROW_REACH := 76.0
+## Clear gap between two rings so their rounded corners never cross.
+const RING_GAP := 10.0
 
 ## Targets: "gauge0".."gauge3" (Stat order), "plaque" (all four), "approve", "deny".
 ## hints: crystals to light (Stat order). arrows: play the change arrows.
@@ -105,6 +114,8 @@ void fragment() {
 var room                     # president_room.gd (untyped: it is a @tool script)
 var _step := -1
 var _rects: Array[Rect2] = []
+## Parallel to _rects: arrow sits under the ring when there is no room above.
+var _arrow_below: Array[bool] = []
 var _t := 0.0
 var _step_t := 0.0
 var _arrow_t := 0.0
@@ -470,10 +481,11 @@ func _process(delta: float) -> void:
 		var r := _target_rect(target)
 		if r.has_area():
 			_rects.append(r)
+	_fit_highlights()
 	_dim_mat.set_shader_parameter("screen_size", _dim.size)
 	_dim_mat.set_shader_parameter("hole_count", mini(_rects.size(), 4))
 	for k in mini(_rects.size(), 4):
-		var r := _rects[k].grow(8.0)
+		var r := _rects[k].grow(RING_PAD)
 		_dim_mat.set_shader_parameter("hole%d" % k, Vector4(r.position.x, r.position.y, r.size.x, r.size.y))
 	_marks.queue_redraw()
 
@@ -525,25 +537,167 @@ func _target_rect(target: String) -> Rect2:
 
 
 func _draw_marks() -> void:
-	var pulse := 0.5 + 0.5 * sin(_t * 5.0)
+	var pulse := _pulse()
 	var ring := StyleBoxFlat.new()
 	ring.draw_center = false
 	ring.border_color = GOLD
 	ring.set_border_width_all(4)
 	ring.set_corner_radius_all(16)
 	ring.anti_aliasing = true
+	for i in _rects.size():
+		var r: Rect2 = _rects[i]
+		_marks.draw_style_box(ring, r.grow(RING_PAD + pulse * RING_PULSE))
+		var below := i < _arrow_below.size() and _arrow_below[i]
+		_draw_pointer(r, pulse, below, i)
+
+
+func _pulse() -> float:
+	return 0.5 + 0.5 * sin(_t * 5.0)
+
+
+func _mark_view() -> Rect2:
+	var s := _marks.size
+	return Rect2(Vector2(SCREEN_MARGIN, SCREEN_MARGIN), s - Vector2(SCREEN_MARGIN, SCREEN_MARGIN) * 2.0)
+
+
+## Pull every ring fully onto the screen, then split any pair that would cross.
+func _fit_highlights() -> void:
+	_arrow_below.clear()
+	if _rects.is_empty():
+		return
+	var view := _mark_view()
+	if view.size.x < 48.0 or view.size.y < 48.0:
+		return
+	var pad := RING_PAD + RING_PULSE
+	var limit := view.grow(-pad)
+	var fitted: Array[Rect2] = []
 	for r in _rects:
-		_marks.draw_style_box(ring, r.grow(8.0 + pulse * 5.0))
-		# an arrow above it, bobbing down at it
-		var tip := Vector2(r.get_center().x, r.position.y - 16.0 - pulse * 10.0)
-		var arrow := PackedVector2Array([
-			tip, tip + Vector2(-18, -24), tip + Vector2(-7, -24), tip + Vector2(-7, -50),
-			tip + Vector2(7, -50), tip + Vector2(7, -24), tip + Vector2(18, -24)])
-		var shadow := PackedVector2Array()
-		for p in arrow:
-			shadow.append(p + Vector2(2, 3))
-		_marks.draw_colored_polygon(shadow, Color(0, 0, 0, 0.5))
-		_marks.draw_colored_polygon(arrow, GOLD)
+		fitted.append(_clamp_rect_inside(r, limit))
+	_rects = fitted
+	for _pass in 2:
+		for i in _rects.size():
+			for j in range(i + 1, _rects.size()):
+				_pull_apart(i, j, pad, limit)
+	for r in _rects:
+		var above := r.position.y - ARROW_REACH >= view.position.y
+		var below := r.end.y + ARROW_REACH <= view.end.y
+		_arrow_below.append(not above and below)
+
+
+func _clamp_rect_inside(r: Rect2, limit: Rect2) -> Rect2:
+	if limit.size.x < 8.0 or limit.size.y < 8.0:
+		return r
+	var hit := r.intersection(limit)
+	if hit.has_area() and hit.size.x >= 8.0 and hit.size.y >= 8.0:
+		return hit
+	var out := r
+	out.size.x = minf(maxf(out.size.x, 8.0), limit.size.x)
+	out.size.y = minf(maxf(out.size.y, 8.0), limit.size.y)
+	out.position.x = clampf(out.position.x, limit.position.x, limit.end.x - out.size.x)
+	out.position.y = clampf(out.position.y, limit.position.y, limit.end.y - out.size.y)
+	return out
+
+
+func _pull_apart(i: int, j: int, pad: float, limit: Rect2) -> void:
+	var a := _rects[i]
+	var b := _rects[j]
+	var overlap := a.grow(pad).intersection(b.grow(pad))
+	if not overlap.has_area():
+		return
+	if overlap.size.x <= overlap.size.y:
+		var push := (overlap.size.x + RING_GAP) * 0.5
+		if a.get_center().x <= b.get_center().x:
+			_rects[i] = _trim_edge(a, true, false, push, limit)
+			_rects[j] = _trim_edge(b, true, true, push, limit)
+		else:
+			_rects[j] = _trim_edge(b, true, false, push, limit)
+			_rects[i] = _trim_edge(a, true, true, push, limit)
+	else:
+		var push := (overlap.size.y + RING_GAP) * 0.5
+		if a.get_center().y <= b.get_center().y:
+			_rects[i] = _trim_edge(a, false, false, push, limit)
+			_rects[j] = _trim_edge(b, false, true, push, limit)
+		else:
+			_rects[j] = _trim_edge(b, false, false, push, limit)
+			_rects[i] = _trim_edge(a, false, true, push, limit)
+
+
+## `horizontal` trims x. `from_start` trims the left or top edge; otherwise the far edge.
+func _trim_edge(r: Rect2, horizontal: bool, from_start: bool, amount: float, limit: Rect2) -> Rect2:
+	var slack := maxf((r.size.x if horizontal else r.size.y) - 12.0, 0.0)
+	var keep := minf(amount, slack)
+	if horizontal:
+		if from_start:
+			r.position.x += keep
+		r.size.x -= keep
+	else:
+		if from_start:
+			r.position.y += keep
+		r.size.y -= keep
+	return _clamp_rect_inside(r, limit)
+
+
+func _draw_pointer(r: Rect2, pulse: float, below: bool, index: int) -> void:
+	var view := _mark_view()
+	var cx := clampf(r.get_center().x, view.position.x + 20.0, view.end.x - 20.0)
+	var reach := 16.0 + pulse * 10.0
+	if _pointer_hits(r, cx, reach, below, index) and not _pointer_hits(r, cx, reach, not below, index):
+		below = not below
+	var y_dir := 1.0 if below else -1.0
+	var tip := Vector2(cx, (r.end.y + reach) if below else (r.position.y - reach))
+	var arrow := PackedVector2Array([
+		tip,
+		tip + Vector2(-18, 24.0 * y_dir), tip + Vector2(-7, 24.0 * y_dir), tip + Vector2(-7, 50.0 * y_dir),
+		tip + Vector2(7, 50.0 * y_dir), tip + Vector2(7, 24.0 * y_dir), tip + Vector2(18, 24.0 * y_dir)])
+	arrow = _shift_poly_inside(arrow, view)
+	var shadow := PackedVector2Array()
+	for p in arrow:
+		shadow.append(p + Vector2(2, 3))
+	_marks.draw_colored_polygon(shadow, Color(0, 0, 0, 0.5))
+	_marks.draw_colored_polygon(arrow, GOLD)
+
+
+func _pointer_box(r: Rect2, cx: float, reach: float, below: bool) -> Rect2:
+	var tip_y := (r.end.y + reach) if below else (r.position.y - reach)
+	var top := tip_y if below else tip_y - 50.0
+	return Rect2(Vector2(cx - 20.0, top), Vector2(40.0, 50.0))
+
+
+## True when this arrow would leave the screen or cross another ring.
+func _pointer_hits(r: Rect2, cx: float, reach: float, below: bool, index: int) -> bool:
+	var box := _pointer_box(r, cx, reach, below)
+	if not _mark_view().encloses(box):
+		return true
+	var pad := RING_PAD + RING_PULSE
+	for i in _rects.size():
+		if i == index:
+			continue
+		if box.intersects(_rects[i].grow(pad)):
+			return true
+	return false
+
+
+func _shift_poly_inside(poly: PackedVector2Array, view: Rect2) -> PackedVector2Array:
+	if poly.is_empty():
+		return poly
+	var bb := Rect2(poly[0], Vector2.ZERO)
+	for p in poly:
+		bb = bb.expand(p)
+	var d := Vector2.ZERO
+	if bb.position.x < view.position.x:
+		d.x = view.position.x - bb.position.x
+	elif bb.end.x > view.end.x:
+		d.x = view.end.x - bb.end.x
+	if bb.position.y < view.position.y:
+		d.y = view.position.y - bb.position.y
+	elif bb.end.y > view.end.y:
+		d.y = view.end.y - bb.end.y
+	if d == Vector2.ZERO:
+		return poly
+	var out := PackedVector2Array()
+	for p in poly:
+		out.append(p + d)
+	return out
 
 
 # ================================================================ ui

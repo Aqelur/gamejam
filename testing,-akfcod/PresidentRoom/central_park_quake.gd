@@ -118,30 +118,30 @@ func prepare(city: Node3D, ending) -> bool:
 # ================================================================ words
 
 func intro_line() -> String:
-	return "Lunchtime in *Central Park*. A few office workers are eating on the benches by the fountain."
+	return "Lunchtime in *Central Park*. A few people by the fountain."
 
 
 func shake_line() -> String:
-	return "Out in the open, with nothing to fall on them, the people in the park are fine. But where does everyone else go now?"
+	return "Out in the open, they're fine. Where does everyone else go?"
 
 
 func later_line() -> String:
 	if drilled:
-		return "They go where they went on Sunday. Just like in the *drill*, the town walks to *Central Park*: %s people, shaken but alive, and the marshals know exactly what to do." \
+		return "Like the *drill*, the town walks to *Central Park*: %s people." \
 			% EarthquakeEnding.thousands(gathered)
-	return "*Central Park* is the town's evacuation point, but nobody ever practised getting here. Only %s people came. The rest are still out in the streets, under cracked walls, waiting for the aftershocks." \
+	return "Nobody practised. Only %s reached *Central Park*." \
 		% EarthquakeEnding.thousands(gathered)
 
 
 ## Read with the tally: the night ahead.
 func headline() -> String:
 	if drilled and tents:
-		return "On the east lawn the *shelter tents* are filling up. Blankets, water and food are coming out of the crates. Nobody is going home tonight, but everyone has somewhere to sleep."
+		return "The *shelter tents* fill up. Everyone has somewhere to sleep."
 	if drilled:
-		return "They're safe, for now. But many of their homes are cracked or gone, night is coming, and there isn't a single tent in the park. Where will they stay?"
+		return "They're safe, but night is coming, and there isn't a tent."
 	if tents:
-		return "On the east lawn, rows of *shelter tents* stand ready, supplies stacked by the gate. Almost nobody came to use them."
-	return "No crowd, no tents, no plan. Tonight the town sleeps wherever it ends up."
+		return "The *shelter tents* stand ready. Almost nobody came."
+	return "No crowd, no tents, no plan."
 
 
 ## The footnote under the toll.

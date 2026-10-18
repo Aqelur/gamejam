@@ -11,3 +11,6 @@ extends Resource
 @export var right_choice: String = "APPROVED"
 @export var denied_effect := Vector4i.ZERO
 @export var approved_effect := Vector4i.ZERO
+## Aynı oyunda, bu damgadan birkaç kart sonra gelen kart. Havuzda ayrıca durmaz.
+@export var denied_follow: CardData
+@export var approved_follow: CardData

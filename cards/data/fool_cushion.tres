@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="CardData" format=3]
+
+[ext_resource type="Script" path="res://cards/card_data.gd" id="1_script"]
+
+[resource]
+script = ExtResource("1_script")
+id = "fool_cushion"
+character_name = "The Town Fool"
+text = "Mayor, the bakery cat has the only chair in the waiting room and hisses at anyone with a form. Let me put a cushion on the floor for the cat. The taxpayers can have the chair. I brought the cushion. It squeaks."
+approved_effect = Vector4i(5, 0, 0, 0)

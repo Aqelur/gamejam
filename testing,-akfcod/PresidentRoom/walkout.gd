@@ -3,7 +3,7 @@ extends Node3D
 ## (_play_walkout) instead of the next morning, and instead of the earthquake
 ## if it was the last day. The game ends here.
 ##
-## Nobody has been paid in months. One morning:
+## Nobody was paid for the week. One week later:
 ##   1. Every emergency service that was built (hospital, fire station, police
 ##      station, in that order) shuts: its lights flicker and go out, the
 ##      light bars on the vehicles out front go dark, and a red CLOSED sign
@@ -11,9 +11,9 @@ extends Node3D
 ##      simply skipped (and with none built, so is this whole step).
 ##   2. One car, the president's own state car, slips out of the palace on
 ##      its own (the motorcade stays parked), lifts the boom at the side gate,
-##      runs along the back street behind the Civic Center and quietly leaves
-##      town along the coast road. No sirens, no sound.
-##   3. A card on black: TEXT, then TIP. Click to start again.
+##      turns the other way onto the gray road and drives straight along it.
+##      No sirens, no sound.
+##   3. A card on black: TEXT. The closing lines follow in menu/walkout_outro.tscn.
 ##
 ## day_cycle.gd drives it:
 ##   setup(city, font_bold, font_black)
@@ -25,42 +25,43 @@ extends Node3D
 ##   drive(cam)                  the car sets off; the camera follows it
 ##   is_away()                   it is out of town
 ##   stop_car()
-##   show_card(ui), show_tip(), wait_restart()
+##   show_card(ui)
 
-const TEXT := "Nobody had been paid in months. One morning the firefighters, the paramedics and the search-and-rescue volunteers left their badges on your desk and walked out together. With the big one on its way, there was no one left who knew how to pull people from the rubble. By evening an angry crowd was storming city hall, and you left through the back door."
-const TIP := "Firefighters, paramedics and rescue teams are a town's first line of defense in an earthquake. Buildings and equipment mean nothing without trained, paid people to use them."
+const TEXT := "Nobody had been paid for the week. One week later the firefighters, the paramedics and the search-and-rescue volunteers left their badges on your desk and walked out together. With the big one on its way, there was no one left who knew how to pull people from the rubble. An angry crowd was storming city hall, and you left through the back door."
 
 const BUILDINGS := "Districts/CivicCenter/Buildings"
 const PALACE := "Districts/CivicCenter/Buildings/PresidentPalace"
 const ROADS := "Roads"
-const CITY_GROUND := "Ground/CityGround"
 const TILE := 26.926893
 
 ## The services that shut, in order. `sign` is where the CLOSED sign hangs
 ## (building-local: top edge of the sign, on the front of the door or the
 ## canopy over it), `w` its width.
 const PLACES := [
-	{"id": "hospital", "node": "Hospital", "title": "HOSPITAL", "time": "07:58",
+	{"id": "hospital", "node": "Hospital", "title": "HOSPITAL", "time": "21:58",
 		"sign": Vector3(0.0, 0.53, 1.512), "w": 0.42},
-	{"id": "fire", "node": "FireStation", "title": "FIRE STATION", "time": "08:01",
+	{"id": "fire", "node": "FireStation", "title": "FIRE STATION", "time": "22:01",
 		"sign": Vector3(0.75, 0.56, 0.245), "w": 0.44},
-	{"id": "police", "node": "PoliceStation", "title": "POLICE STATION", "time": "08:03",
+	{"id": "police", "node": "PoliceStation", "title": "POLICE STATION", "time": "22:03",
 		"sign": Vector3(0.0, 0.9, 0.70), "w": 0.40},
 ]
 
-## The state car's way out of the palace grounds (palace-local x, z): along
-## the portico apron past the motorcade, out of the right-hand drive gate,
-## then down the lane between the palace fence and the park to the road.
+## The state car's way out (palace-local x, z): along the portico apron past
+## the motorcade, out of the right-hand drive gate once the boom is up, then
+## one right turn onto the gray road (z = 4 is its centre line). The straight
+## run continues up that road.
 const GROUNDS_PATH := [Vector2(2.05, 1.80), Vector2(2.40, 2.20), Vector2(2.30, 2.75),
-	Vector2(2.30, 3.40), Vector2(2.45, 3.75), Vector2(6.0, 3.75)]
+	Vector2(2.30, 3.40), Vector2(2.70, 3.75), Vector2(3.50, 3.95), Vector2(4.60, 4.00)]
 const CAR_Y := 0.04             # palace-local height of the drive
-const GROUNDS_SPEED := 1.4      # tiles / second inside the grounds
-const ROAD_SPEED := 3.6         # tiles / second on the road
+const OUTSIDE_Z := 3.7          # palace-local z where the car is past the fence
+const ROAD_Z := 4.00            # palace-local z of the gray road's centre line
+const GROUNDS_SPEED := 1.4      # tiles / second inside the grounds and through the turn
+const ROAD_SPEED := 3.6         # tiles / second once it is on the road
 const ACCEL := 1.6              # tiles / second^2
-## How far the car carries on past the last road, out of town.
-const OUT_TILES := 8
-## is_away() once it is this many tiles past the last road.
-const AWAY_TILES := 4.5
+## How far the straight run continues, in tiles, after the turn onto the road.
+const OUT_TILES := 16
+## is_away() once the straight run has covered this many tiles.
+const AWAY_TILES := 8.0
 
 const GOLD := Color(1.0, 0.82, 0.36)
 const SOFT := Color(0.86, 0.88, 0.94)
@@ -79,26 +80,24 @@ var _palace: Node3D
 var _src_car: Node3D
 var _car: Node3D
 var _path: Array = []          # world points
-var _slow_until := 0           # path index where the road (and full speed) starts
-var _last_road := 0            # path index of the last road point
+var _slow_until := 0           # path index where the straight run (and full speed) starts
+var _last_road := 0            # path index where the turn onto the road is done
 var _i := 1
 var _v := 0.0
-var _past_road := 0.0          # tiles driven after the last road point
+var _past_road := 0.0          # tiles driven after the turn onto the road
 var _driving := false
 var _cam: Camera3D
 var _eye := Vector3.ZERO
 var _look := Vector3.ZERO
 var _boom: Node3D
 var _boom_up := false
-var _road := {}                # Vector2i -> world point
-var _road_origin := Vector3.ZERO
 var _road_y := -0.7273283
 
 # the card
 var _ui: CanvasLayer
 var _card: ColorRect
 var _card_rows: VBoxContainer
-var _tip_rows: Array[Control] = []
+var _card_tween: Tween
 
 
 func _ready() -> void:
@@ -112,6 +111,7 @@ func setup(city: Node3D, font_bold: Font, font_black: Font) -> void:
 	_places.clear()
 	if _city == null:
 		return   # no city: only the card
+	_set_night()
 	for p in PLACES:
 		var n := _city.get_node_or_null(BUILDINGS + "/" + String(p.node)) as Node3D
 		if n == null:
@@ -121,6 +121,47 @@ func setup(city: Node3D, font_bold: Font, font_black: Font) -> void:
 		e.done = false
 		e.tweens = []
 		_places.append(e)
+
+
+## Dark air over the city, with a little moonlight. The environment is a copy,
+## so the shared city stays daylight for every other scene.
+func _set_night() -> void:
+	var we := _city.get_node_or_null("WorldEnvironment") as WorldEnvironment
+	if we and we.environment:
+		var env := we.environment.duplicate() as Environment
+		if env.sky:
+			env.sky = env.sky.duplicate() as Sky
+			var psm := env.sky.sky_material as ProceduralSkyMaterial
+			if psm:
+				psm = psm.duplicate() as ProceduralSkyMaterial
+				psm.sky_top_color = Color(0.012, 0.016, 0.04)
+				psm.sky_horizon_color = Color(0.09, 0.11, 0.18)
+				psm.sky_energy_multiplier = 0.45
+				psm.ground_bottom_color = Color(0.008, 0.01, 0.02)
+				psm.ground_horizon_color = Color(0.05, 0.06, 0.1)
+				psm.ground_energy_multiplier = 0.25
+				psm.sun_angle_max = 8.0
+				env.sky.sky_material = psm
+		env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+		env.ambient_light_color = Color(0.42, 0.48, 0.68)
+		env.ambient_light_energy = 0.16
+		env.background_energy_multiplier = 0.16
+		env.fog_enabled = true
+		env.fog_light_color = Color(0.03, 0.04, 0.07)
+		env.fog_light_energy = 0.4
+		env.fog_density = 0.0018
+		env.fog_sky_affect = 0.55
+		env.adjustment_enabled = true
+		env.adjustment_brightness = 0.82
+		env.adjustment_saturation = 0.78
+		env.adjustment_contrast = 1.05
+		we.environment = env
+	var sun := _city.get_node_or_null("Sun") as DirectionalLight3D
+	if sun:
+		sun.light_color = Color(0.74, 0.8, 0.96)
+		sun.light_energy = 0.32
+		sun.shadow_enabled = true
+		sun.rotation_degrees = Vector3(-58.0, 32.0, 0.0)
 
 
 func _is_built(n: Node) -> bool:
@@ -314,42 +355,57 @@ func prepare_car() -> bool:
 	_put_car(start, start_dir)
 	_boom = _palace.get_node_or_null("Grounds/GuardBoothR/Boom") as Node3D
 
-	# 1. out of the grounds
+	# 1. out of the right-hand gate, then the other way: a right turn onto
+	# the gray road in front of the palace.
 	_path = [start]
+	var street_y := _street_y()
 	for p in GROUNDS_PATH:
 		var q := _palace.to_global(Vector3(p.x, CAR_Y, p.y))
-		if p == GROUNDS_PATH.back():
-			q.y = _road_y + 0.01 * tile   # down onto the street
+		if p.y >= OUTSIDE_Z:
+			q.y = street_y
+			q = _on_road(q)
 		_path.append(q)
 	_slow_until = _path.size() - 1
+	_last_road = _slow_until
 
-	# 2. the back street behind the Civic Center, to the far corner of town
-	_index_roads()
-	var exit_dir := Vector3.RIGHT
-	if _road.size() > 1:
-		var last: Vector3 = _path.back()
-		var a := _nearest_road(last)
-		var exit := _exit_key()
-		var route := _edge_route(a, exit)
-		# don't double back to the middle of the first tile
-		while route.size() >= 2 and _flat3(route[1] - route[0]).dot(_flat3(route[0] - last)) < 0.0:
-			route.pop_front()
-		_path.append_array(route)
-		# 3. and on, past the last road, out along the coast
-		exit_dir = Vector3.RIGHT if _road.has(exit + Vector2i(-1, 0)) or not _road.has(exit + Vector2i(1, 0)) \
-			else Vector3.LEFT
-	_last_road = _path.size() - 1
+	# 2. straight on, up the centre of that road.
+	var away := _palace.global_basis.x
+	away.y = 0.0
+	away = away.normalized()
 	var end: Vector3 = _path.back()
-	var ground := _ground_top()
 	for k in range(1, OUT_TILES + 1):
-		var q := end + exit_dir * tile * k
-		q.y = lerpf(end.y, ground, clampf(k / 1.5, 0.0, 1.0))
-		_path.append(q)
+		var q := end + away * tile * float(k)
+		q.y = street_y
+		_path.append(_on_road(q))
 	return true
 
 
+## Height of the gray road surface. The mesh sits a little above its node.
+func _street_y() -> float:
+	var roads := _city.get_node_or_null(ROADS)
+	if roads:
+		for r in roads.get_children():
+			var nm := String(r.name)
+			if r is Node3D and (nm.begins_with("road_straight") or nm.begins_with("civic_road")):
+				return (r as Node3D).global_position.y + 0.003 * tile
+	return _road_y
+
+
+## Keep the car on the grey road's centre line once it has reached it.
+## Palace local z = ROAD_Z is that line; short of it, the car is still
+## coming out of the gate.
+func _on_road(q: Vector3) -> Vector3:
+	var local := _palace.to_local(q)
+	if local.z < ROAD_Z - 0.05:
+		return q
+	local.z = ROAD_Z
+	var snapped := _palace.to_global(Vector3(local.x, 0.0, local.z))
+	snapped.y = q.y
+	return snapped
+
+
 func car_kicker() -> String:
-	return "08:09   ·   PRESIDENTIAL PALACE"
+	return "22:09   ·   PRESIDENTIAL PALACE"
 
 
 ## [eye, look]: above the park, looking across the drive at the palace and
@@ -471,118 +527,10 @@ func _plain_car() -> Node3D:
 	return t
 
 
-# ---------------------------------------------------------------- roads
-
-func _index_roads() -> void:
-	_road.clear()
-	var roads := _city.get_node_or_null(ROADS)
-	if roads == null:
-		return
-	var first := true
-	for r in roads.get_children():
-		if not r is Node3D:
-			continue
-		var nm := String(r.name)
-		if not (nm.begins_with("road") or nm.begins_with("civic_")):
-			continue   # (the parked cars live in Roads too)
-		var p := (r as Node3D).global_position
-		if first:
-			_road_origin = p
-			first = false
-		p.y = maxf(p.y, _road_y) + 0.01 * tile
-		_road[_key(p)] = p
-
-
-func _key(p: Vector3) -> Vector2i:
-	return Vector2i(roundi((p.x - _road_origin.x) / tile), roundi((p.z - _road_origin.z) / tile))
-
-
-func _nearest_road(p: Vector3) -> Vector2i:
-	var best := Vector2i.ZERO
-	var best_d := INF
-	for k in _road:
-		var d := _flat3(_road[k] - p).length()
-		if d < best_d:
-			best_d = d
-			best = k
-	return best
-
-
-## The far corner of town on the palace's side: the east-most street, as
-## far down toward the coast as it goes.
-func _exit_key() -> Vector2i:
-	var best := Vector2i.ZERO
-	var first := true
-	for k: Vector2i in _road:
-		if first or k.x > best.x or (k.x == best.x and k.y > best.y):
-			best = k
-			first = false
-	return best
-
-
-## Along the street to the edge of town, then down the edge street: the
-## back way, round the outside. Falls back to any shortest way.
-func _edge_route(from: Vector2i, to: Vector2i) -> Array:
-	var keys: Array[Vector2i] = [from]
-	var ok := true
-	var k := from
-	for leg in [Vector2i(signi(to.x - from.x), 0), Vector2i(0, signi(to.y - from.y))]:
-		if leg == Vector2i.ZERO:
-			continue
-		var target := to.x if leg.x != 0 else to.y
-		while (k.x if leg.x != 0 else k.y) != target:
-			k += leg
-			if not _road.has(k):
-				ok = false
-				break
-			keys.append(k)
-		if not ok:
-			break
-	if not ok:
-		keys = _bfs(from, to)
-	var out: Array = []
-	for q in keys:
-		out.append(_road[q])
-	return out
-
-
-func _bfs(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
-	var prev := {from: from}
-	var queue: Array[Vector2i] = [from]
-	var head := 0
-	while head < queue.size():
-		var k := queue[head]
-		head += 1
-		if k == to:
-			break
-		for d in [Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(0, -1)]:
-			var n: Vector2i = k + d
-			if _road.has(n) and not prev.has(n):
-				prev[n] = k
-				queue.append(n)
-	var out: Array[Vector2i] = [from]
-	if not prev.has(to):
-		return out
-	out.clear()
-	var k := to
-	while k != from:
-		out.push_front(k)
-		k = prev[k]
-	out.push_front(from)
-	return out
-
-
-func _ground_top() -> float:
-	var g := _city.get_node_or_null(CITY_GROUND) as MeshInstance3D
-	if g:
-		return (g.global_transform * g.get_aabb()).end.y + 0.005 * tile
-	return -1.94
-
-
 # ================================================================ the card
 
 ## On black: the treasury is empty, WALKOUT, and what happened (TEXT).
-## Returns once it has faded in; show_tip() adds the tip under it.
+## Returns once it has faded in.
 func show_card(ui: CanvasLayer) -> void:
 	_ui = ui
 	_card = ColorRect.new()
@@ -606,56 +554,35 @@ func show_card(ui: CanvasLayer) -> void:
 	var rule := _rule()
 	var body := _label(TEXT, _font_bold, 25, SOFT, 960.0)
 	var rows: Array[Control] = [head, title, rule, body]
-	var gap := Control.new()
-	gap.custom_minimum_size = Vector2(0, 10)
-	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var tip_head := _label("TIP", _spaced(_font_black, 6), 16, GOLD)
-	var tip := _label(TIP, _font_bold, 21, Color(1, 1, 1, 0.92), 880.0)
-	_tip_rows = [gap, tip_head, tip]
-	for r in rows + _tip_rows:
+	for r in rows:
 		r.modulate.a = 0.0
 		_card_rows.add_child(r)
 
 	_card.modulate.a = 0.0
-	var t := create_tween()
-	t.tween_property(_card, "modulate:a", 1.0, 0.9)
-	t.tween_property(head, "modulate:a", 1.0, 0.4)
-	t.tween_property(title, "modulate:a", 1.0, 0.6)
-	t.tween_property(rule, "modulate:a", 1.0, 0.3)
-	t.tween_property(body, "modulate:a", 1.0, 1.0)
-	await t.finished
+	_card_tween = create_tween()
+	_card_tween.tween_property(_card, "modulate:a", 1.0, 0.9)
+	_card_tween.tween_property(head, "modulate:a", 1.0, 0.4)
+	_card_tween.tween_property(title, "modulate:a", 1.0, 0.6)
+	_card_tween.tween_property(rule, "modulate:a", 1.0, 0.3)
+	_card_tween.tween_property(body, "modulate:a", 1.0, 1.0)
+	await _card_tween.finished
 
 
-func show_tip() -> void:
-	var t := create_tween()
-	t.tween_interval(0.6)
-	for r in _tip_rows:
-		t.tween_property(r, "modulate:a", 1.0, 0.6)
-	await t.finished
+## The paragraph is on screen. A click while it is still arriving cuts to this.
+func reveal_card() -> void:
+	_kill_card_tween()
+	if _card:
+		_card.modulate.a = 1.0
+	if _card_rows == null:
+		return
+	for r in _card_rows.get_children():
+		(r as CanvasItem).modulate.a = 1.0
 
 
-## "Click to start again", then the game starts over.
-func wait_restart() -> void:
-	var again := _label("Click to start again", _font_bold, 18, Color(1, 1, 1, 0.6))
-	again.modulate.a = 0.0
-	_card_rows.add_child(again)
-	await get_tree().create_timer(0.8).timeout
-	var t := create_tween()
-	t.tween_property(again, "modulate:a", 1.0, 0.5)
-	await t.finished
-	var pulse := create_tween().set_loops()
-	pulse.tween_property(again, "modulate:a", 0.35, 0.8)
-	pulse.tween_property(again, "modulate:a", 1.0, 0.8)
-	# polled, so it works wherever this node lives (the city is in a SubViewport)
-	var was_down := Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
-	while true:
-		await get_tree().process_frame
-		var down := Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
-		if down and not was_down:
-			break
-		was_down = down
-	pulse.kill()
-	get_tree().reload_current_scene()
+func _kill_card_tween() -> void:
+	if _card_tween and _card_tween.is_valid():
+		_card_tween.kill()
+	_card_tween = null
 
 
 func _label(text: String, font: Font, px: int, color: Color, width := 0.0) -> Label:

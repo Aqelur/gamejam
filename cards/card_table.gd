@@ -6,12 +6,13 @@ const MONEY := 1
 
 @export var first_card: CardData
 @export var cards: Array[CardData] = []
+## Havuzda ayrıca duran yeni kartlar. Bir kartın takip kartı olanlar buradan güne yazılmaz.
+@export var extra_cards: Array[CardData] = []
 @export var advisors: Array[AdvisorData] = []
 @export var bar_start_value := 50
-@export var cards_per_day := 4
-@export var quake_day_min := 7
-@export var quake_day_max := 9
-@export var offer_days: Array[int] = [3, 5]
+@export var calendar_days: Array[int] = [1, 8, 15, 22]
+@export var base_per_day := 5
+@export var offer_days: Array[int] = [8, 15]
 ## Danışman parası ödendikten sonra Money bunun altına düşemez.
 @export var min_money_after_hire := 20
 @export var rich_money := 80
@@ -19,12 +20,11 @@ const MONEY := 1
 
 var _values: Array[int] = []
 var _deck: Array[CardData] = []
+var _day_queues: Array = []
+var _day_index := 0
 var _current: CardData
 var _day := 0
-var _cards_today := 0
 var _quake_day := 0
-## Deprem günü kaçıncı karttan sonra geleceği.
-var _quake_after := 0
 var _offered: Array[AdvisorData] = []
 var _hired: Array[AdvisorData] = []
 var _screen_done: Callable
@@ -46,11 +46,7 @@ func _ready() -> void:
 	for i in _balance.icons.size():
 		_values.append(bar_start_value)
 		_balance.set_value(i, bar_start_value)
-	_quake_day = randi_range(quake_day_min, quake_day_max)
-	_quake_after = randi_range(1, cards_per_day - 1)
-	if first_card:
-		_deck.append(first_card)
-	_refill_deck()
+	_build_days()
 	_card.swiped.connect(_on_card_swiped)
 	_offer.closed.connect(_on_offer_closed)
 	_day_screen.gui_input.connect(_on_day_screen_input)
@@ -65,8 +61,13 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _start_day() -> void:
-	_day += 1
-	_cards_today = 0
+	if _day_index >= calendar_days.size():
+		_hide_card()
+		_show_screen("EARTHQUAKE", get_tree().reload_current_scene, "Click to play again")
+		return
+	_day = calendar_days[_day_index]
+	_deck = _day_queues[_day_index]
+	_day_index += 1
 	_show_screen("Day %d" % _day, _begin_day)
 
 
@@ -118,14 +119,14 @@ func _add_to_shelf(advisor: AdvisorData) -> void:
 	_shelf.add_child(box)
 
 
-## Deprem günü olabilecek ama olmayan, henüz geçmemiş bir gün.
+## Deprem günü olmayan, henüz geçmemiş bir takvim günü.
 func _safe_day() -> int:
 	var days: Array[int] = []
-	for d in range(quake_day_min, quake_day_max + 1):
+	for d in calendar_days:
 		if d != _quake_day and d >= _day:
 			days.append(d)
 	if days.is_empty():
-		return _quake_day - 1
+		return calendar_days[0]
 	return days.pick_random()
 
 
@@ -136,16 +137,10 @@ func _begin_cards() -> void:
 
 
 func _next_card() -> void:
-	if _day == _quake_day and _cards_today == _quake_after:
-		_hide_card()
-		_show_screen("EARTHQUAKE", get_tree().reload_current_scene, "Click to play again")
-		return
-	if _cards_today >= cards_per_day:
+	if _deck.is_empty():
 		_hide_card()
 		_start_day()
 		return
-	if _deck.is_empty():
-		_refill_deck()
 	_current = _deck.pop_front()
 	_text_label.text = _current.text
 	_name_label.text = _current.character_name
@@ -158,12 +153,53 @@ func _next_card() -> void:
 	_card.show_data(_current)
 
 
-func _refill_deck() -> void:
-	var fresh := cards.duplicate()
-	fresh.shuffle()
-	if fresh.size() > 1 and fresh[0] == _current:
-		fresh.push_back(fresh.pop_front())
-	_deck.append_array(fresh)
+## Her güne 5 eski kart. Yeni kartlar günlere eşit bölünür; takip kartı olanlar havuza girmez.
+func _build_days() -> void:
+	var base: Array[CardData] = []
+	base.assign(cards)
+	base.shuffle()
+	var extras := _starter_extras()
+	extras.shuffle()
+	var buckets: Array = []
+	for _day_i in calendar_days.size():
+		buckets.append([] as Array[CardData])
+	for i in extras.size():
+		(buckets[i % calendar_days.size()] as Array[CardData]).append(extras[i])
+	_day_queues.clear()
+	var cursor := 0
+	for day_i in calendar_days.size():
+		var queue: Array[CardData] = []
+		var need := base_per_day
+		if day_i == 0 and first_card:
+			queue.append(first_card)
+			need -= 1
+		while need > 0 and cursor < base.size():
+			queue.append(base[cursor])
+			cursor += 1
+			need -= 1
+		for extra in buckets[day_i] as Array[CardData]:
+			var slot := queue.size()
+			if day_i == 0 and first_card and not queue.is_empty():
+				slot = randi_range(1, queue.size())
+			queue.insert(slot, extra)
+		_day_queues.append(queue)
+	_quake_day = calendar_days[calendar_days.size() - 1]
+
+
+## Yeni listedeki, başka bir kartın devamı olmayan kartlar.
+func _starter_extras() -> Array[CardData]:
+	var followed: Array[CardData] = []
+	for card in extra_cards:
+		if card.denied_follow and card.denied_follow not in followed:
+			followed.append(card.denied_follow)
+		if card.approved_follow and card.approved_follow not in followed:
+			followed.append(card.approved_follow)
+	var starters: Array[CardData] = []
+	for card in extra_cards:
+		if card in followed:
+			continue
+		starters.append(card)
+	return starters
 
 
 func _on_card_swiped(side: int) -> void:
@@ -172,8 +208,14 @@ func _on_card_swiped(side: int) -> void:
 	for advisor in _hired:
 		effect = advisor.modify(_current, approved, effect)
 	_apply(effect)
-	_cards_today += 1
+	_queue_follow(_current.approved_follow if approved else _current.denied_follow)
 	_next_card()
+
+
+func _queue_follow(follow: CardData) -> void:
+	if follow == null:
+		return
+	_deck.insert(mini(2, _deck.size()), follow)
 
 
 func _apply(effect: Vector4i) -> void:

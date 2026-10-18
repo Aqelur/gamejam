@@ -12,9 +12,9 @@ const CURTAIN := 0.45
 const LINE_IN := 1.15
 const LINE_OUT := 1.0
 const GAP := 0.75
-const HOLDS: Array[float] = [3.2, 3.8, 3.3, 3.4, 4.2]
-const TAIL := 0.5
-const CLOSE := 1.45
+const SECONDS_PER_WORD := 0.3
+const TAIL := 0.15
+const CLOSE := 0.55
 
 const LINES: PackedStringArray = [
 	"They did not have to die.",
@@ -56,6 +56,7 @@ func _play() -> void:
 		get_tree().change_scene_to_file(CREDITS_SCENE)
 	else:
 		_music.stop()
+		get_tree().set_meta(StoryIntro.REPLAY_META, true)
 		get_tree().change_scene_to_file(TITLE_SCENE)
 
 
@@ -65,7 +66,11 @@ func _show_line(index: int) -> void:
 	var fade_in := create_tween()
 	fade_in.tween_property(_body, "modulate:a", 1.0, LINE_IN).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 	await fade_in.finished
-	await get_tree().create_timer(HOLDS[index]).timeout
+	await get_tree().create_timer(_read_time(LINES[index])).timeout
+
+
+func _read_time(line: String) -> float:
+	return float(line.split(" ", false).size()) * SECONDS_PER_WORD
 
 
 func _clear_line() -> void:

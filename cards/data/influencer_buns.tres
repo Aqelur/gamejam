@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="CardData" format=3]
+
+[ext_resource type="Script" path="res://cards/card_data.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://denemegörselleri/3.jpeg" id="2_image"]
+
+[resource]
+script = ExtResource("1_script")
+id = "influencer_buns"
+character_name = "The Influencer"
+image = ExtResource("2_image")
+text = "Mayor, the bakery wants me to call their buns historic. They'll pay the town either way. Can I say it on camera for the big check? I'll only say it once. Probably."
+denied_effect = Vector4i(0, 5, 0, 0)
+approved_effect = Vector4i(-10, 15, 0, 0)
