@@ -17,6 +17,10 @@ Drag a card left to deny it, or right to approve it. Every stamp moves four mete
 
 Each meter starts at 50. Letting one fall to 0 or rise to 100 both end the run. At the end of the day the town shows what your decisions changed. The earthquake arrives on a day you do not know, and the balance at that moment decides the ending. Each run deals a different order of proposals.
 
+## Download
+
+Windows build: [MayorsCall.zip](https://github.com/Aqelur/gamejam/releases/download/windows/MayorsCall.zip). Unzip it and run the game.
+
 ## Run the project
 
 Open this repository in Godot 4.7 and press Play. The game starts at the title screen.
