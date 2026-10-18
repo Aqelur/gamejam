@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="CardData" format=3]
+
+[ext_resource type="Script" path="res://cards/card_data.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://denemegörselleri/4.jpeg" id="2_image"]
+
+[resource]
+script = ExtResource("1_script")
+id = "interior_police"
+character_name = "Minister of Interior"
+image = ExtResource("2_image")
+text = "This town doesn't have a police station. When the ground shakes, someone has to keep order and stop the looting. Sign the order and I'll have officers here by the end of the week."
+denied_effect = Vector4i(0, 10, -5, -5)
+approved_effect = Vector4i(0, -10, 5, 10)

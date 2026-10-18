@@ -11,6 +11,9 @@ extends Control
 @export var edge_color := Color(0.09, 0.05, 0.02)
 @export var edge_width := 3.0
 @export var empty_tint := Color(0.35, 0.35, 0.35)
+@export var show_values := true
+@export var value_font_size := 20
+@export var value_color := Color(0.96, 0.9, 0.75)
 
 var _values := PackedFloat32Array()
 
@@ -42,3 +45,7 @@ func _draw_icon(texture: Texture2D, center: Vector2, value: float) -> void:
 	var src := Rect2(0.0, tex_size.y * empty, tex_size.x, tex_size.y * (1.0 - empty))
 	var dst := Rect2(rect.position.x, rect.position.y + rect.size.y * empty, rect.size.x, rect.size.y * (1.0 - empty))
 	draw_texture_rect_region(texture, dst, src)
+
+	if show_values:
+		var text_pos := Vector2(rect.end.x + 8.0, center.y + value_font_size * 0.35)
+		draw_string(ThemeDB.fallback_font, text_pos, str(int(value)), HORIZONTAL_ALIGNMENT_LEFT, -1, value_font_size, value_color)

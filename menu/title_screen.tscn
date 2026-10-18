@@ -1,14 +1,11 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://cb014efaqkq25"]
 
-[ext_resource type="Script" path="res://menu/title_screen.gd" id="1_title"]
-[ext_resource type="Script" path="res://menu/city_backdrop.gd" id="2_city"]
-[ext_resource type="Texture2D" path="res://menu/images/city.png" id="5_city_image"]
-[ext_resource type="Script" path="res://menu/sky.gd" id="3_sky"]
-[ext_resource type="FontFile" path="res://menu/fonts/Montserrat-Bold.ttf" id="4_montserrat"]
-
-[sub_resource type="Gradient" id="Gradient_ember"]
-offsets = PackedFloat32Array(0, 0.2, 0.7, 1)
-colors = PackedColorArray(1, 0.8, 0.45, 0, 1, 0.75, 0.4, 0.9, 1, 0.6, 0.3, 0.6, 1, 0.5, 0.25, 0)
+[ext_resource type="Script" uid="uid://b4y1tfy1ldrbk" path="res://menu/title_screen.gd" id="1_title"]
+[ext_resource type="Script" uid="uid://saf7l15aorin" path="res://menu/backdrop.gd" id="2_backdrop"]
+[ext_resource type="FontFile" uid="uid://bdxkp7ecpn050" path="res://menu/fonts/Montserrat-Bold.ttf" id="4_montserrat"]
+[ext_resource type="Texture2D" uid="uid://d3jfkhhy56uqj" path="res://menu/images/office.png" id="5_office_image"]
+[ext_resource type="Script" uid="uid://d2kxaooeksotr" path="res://menu/menu_button.gd" id="6_button"]
+[ext_resource type="AudioStream" path="res://menu/audio/smooth_waters.mp3" id="7_music"]
 
 [sub_resource type="Gradient" id="Gradient_sky"]
 offsets = PackedFloat32Array(0, 0.3, 0.52, 1)
@@ -19,6 +16,10 @@ gradient = SubResource("Gradient_sky")
 width = 16
 height = 256
 fill_to = Vector2(0, 1)
+
+[sub_resource type="Gradient" id="Gradient_mote"]
+offsets = PackedFloat32Array(0, 0.3, 0.7, 1)
+colors = PackedColorArray(1, 0.92, 0.75, 0, 1, 0.92, 0.75, 0.45, 1, 0.92, 0.75, 0.45, 1, 0.92, 0.75, 0)
 
 [sub_resource type="Gradient" id="Gradient_vignette"]
 offsets = PackedFloat32Array(0.45, 1)
@@ -37,7 +38,7 @@ variation_embolden = 0.6
 
 [sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_button"]
 
-[node name="TitleScreen" type="Control"]
+[node name="TitleScreen" type="Control" unique_id=955776012]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -46,7 +47,12 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_title")
 
-[node name="Background" type="TextureRect" parent="."]
+[node name="Music" type="AudioStreamPlayer" parent="."]
+unique_name_in_owner = true
+stream = ExtResource("7_music")
+volume_db = -6.0
+
+[node name="Background" type="TextureRect" parent="." unique_id=1118845171]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -57,7 +63,7 @@ mouse_filter = 2
 texture = SubResource("GradientTexture2D_sky")
 expand_mode = 1
 
-[node name="Sky" type="Control" parent="."]
+[node name="Office" type="Control" parent="." unique_id=1253669492]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -65,40 +71,36 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
-script = ExtResource("3_sky")
+script = ExtResource("2_backdrop")
+texture = ExtResource("5_office_image")
+tint = Color(0.72, 0.62, 0.54, 1)
+smoke_points = PackedVector2Array()
+building_tops = PackedVector2Array()
+building_bases = PackedVector2Array()
+ceiling_area = Rect2(0.12, 0.03, 0.76, 0.22)
+floor_range = Vector2(0.62, 0.98)
+dust_color = Color(0.85, 0.78, 0.66, 0.55)
+debris_color = Color(0.78, 0.72, 0.6, 1)
+light_flicker = 0.35
 
-[node name="City" type="Control" parent="."]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-script = ExtResource("2_city")
-texture = ExtResource("5_city_image")
-smoke_points = PackedVector2Array(0.5995, 0.4082, 0.8571, 0.4578, 0.4415, 0.466, 0.398, 0.5732, 0.6705, 0.5137, 0.26, 0.57)
-building_tops = PackedVector2Array(0.7234, 0.2996, 0.6718, 0.2996, 0.5028, 0.4256, 0.5995, 0.4082, 0.5624, 0.4283, 0.6179, 0.5381, 0.7149, 0.4451, 0.4415, 0.466, 0.4709, 0.5829, 0.4219, 0.582, 0.398, 0.5732, 0.6705, 0.5137)
-building_bases = PackedVector2Array(0.7215, 0.7059, 0.6703, 0.7059, 0.5028, 0.6023, 0.5991, 0.6021, 0.5622, 0.5893, 0.6175, 0.7057, 0.7142, 0.5986, 0.4416, 0.6023, 0.471, 0.71, 0.4221, 0.7081, 0.3982, 0.6906, 0.6699, 0.6728)
-
-[node name="Embers" type="CPUParticles2D" parent="."]
+[node name="Motes" type="CPUParticles2D" parent="." unique_id=1200248472]
 unique_name_in_owner = true
-position = Vector2(640, 735)
-amount = 60
-lifetime = 8.0
-preprocess = 8.0
+position = Vector2(640, 360)
+amount = 50
+lifetime = 9.0
+preprocess = 9.0
 emission_shape = 3
-emission_rect_extents = Vector2(640, 10)
-direction = Vector2(0, -1)
-spread = 25.0
-gravity = Vector2(6, 0)
-initial_velocity_min = 25.0
-initial_velocity_max = 60.0
-scale_amount_min = 2.5
-scale_amount_max = 5.0
-color_ramp = SubResource("Gradient_ember")
+emission_rect_extents = Vector2(640, 360)
+direction = Vector2(1, -0.3)
+spread = 180.0
+gravity = Vector2(0, 0)
+initial_velocity_min = 3.0
+initial_velocity_max = 10.0
+scale_amount_min = 1.5
+scale_amount_max = 3.0
+color_ramp = SubResource("Gradient_mote")
 
-[node name="Vignette" type="TextureRect" parent="."]
+[node name="Vignette" type="TextureRect" parent="." unique_id=379922256]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -109,7 +111,7 @@ mouse_filter = 2
 texture = SubResource("GradientTexture2D_vignette")
 expand_mode = 1
 
-[node name="Center" type="VBoxContainer" parent="."]
+[node name="Center" type="VBoxContainer" parent="." unique_id=1912240236]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
@@ -124,73 +126,75 @@ grow_horizontal = 2
 grow_vertical = 2
 alignment = 1
 
-[node name="TitleLabel" type="Label" parent="Center"]
+[node name="TitleLabel" type="Label" parent="Center" unique_id=876104941]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.97, 0.93, 0.84, 1)
-theme_override_colors/font_outline_color = Color(0.1, 0.06, 0.03, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.5)
-theme_override_constants/outline_size = 14
+theme_override_colors/font_outline_color = Color(0.1, 0.06, 0.03, 1)
 theme_override_constants/shadow_offset_x = 0
 theme_override_constants/shadow_offset_y = 7
+theme_override_constants/outline_size = 14
 theme_override_constants/shadow_outline_size = 14
 theme_override_fonts/font = SubResource("FontVariation_title")
 theme_override_font_sizes/font_size = 84
-text = "Mayor's Call: Disaster"
+text = "Mayor's Call"
 horizontal_alignment = 1
 autowrap_mode = 3
 
-[node name="Spacer" type="Control" parent="Center"]
+[node name="Spacer" type="Control" parent="Center" unique_id=1472853228]
 custom_minimum_size = Vector2(0, 60)
 layout_mode = 2
 mouse_filter = 2
 
-[node name="Buttons" type="VBoxContainer" parent="Center"]
+[node name="Buttons" type="VBoxContainer" parent="Center" unique_id=82235823]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 4
-theme_override_constants/separation = 4
+theme_override_constants/separation = 10
 
-[node name="StartButton" type="Button" parent="Center/Buttons"]
+[node name="StartButton" type="Button" parent="Center/Buttons" unique_id=1211993536]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(260, 60)
+custom_minimum_size = Vector2(460, 62)
 layout_mode = 2
 focus_neighbor_top = NodePath("../QuitButton")
 focus_neighbor_bottom = NodePath("../QuitButton")
 mouse_default_cursor_shape = 2
 theme_override_colors/font_color = Color(0.96, 0.93, 0.86, 0.8)
-theme_override_colors/font_hover_color = Color(0.98, 0.8, 0.42, 1)
 theme_override_colors/font_focus_color = Color(0.98, 0.8, 0.42, 1)
 theme_override_colors/font_pressed_color = Color(1, 0.92, 0.7, 1)
+theme_override_colors/font_hover_color = Color(0.98, 0.8, 0.42, 1)
 theme_override_colors/font_hover_pressed_color = Color(1, 0.92, 0.7, 1)
 theme_override_colors/font_outline_color = Color(0.1, 0.06, 0.03, 1)
-theme_override_constants/outline_size = 10
+theme_override_constants/outline_size = 6
 theme_override_fonts/font = ExtResource("4_montserrat")
-theme_override_font_sizes/font_size = 40
+theme_override_font_sizes/font_size = 34
 theme_override_styles/normal = SubResource("StyleBoxEmpty_button")
-theme_override_styles/hover = SubResource("StyleBoxEmpty_button")
 theme_override_styles/pressed = SubResource("StyleBoxEmpty_button")
+theme_override_styles/hover = SubResource("StyleBoxEmpty_button")
 theme_override_styles/focus = SubResource("StyleBoxEmpty_button")
 text = "Start"
+script = ExtResource("6_button")
 
-[node name="QuitButton" type="Button" parent="Center/Buttons"]
+[node name="QuitButton" type="Button" parent="Center/Buttons" unique_id=1224364485]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(260, 60)
+custom_minimum_size = Vector2(460, 62)
 layout_mode = 2
 focus_neighbor_top = NodePath("../StartButton")
 focus_neighbor_bottom = NodePath("../StartButton")
 mouse_default_cursor_shape = 2
 theme_override_colors/font_color = Color(0.96, 0.93, 0.86, 0.8)
-theme_override_colors/font_hover_color = Color(0.98, 0.8, 0.42, 1)
 theme_override_colors/font_focus_color = Color(0.98, 0.8, 0.42, 1)
 theme_override_colors/font_pressed_color = Color(1, 0.92, 0.7, 1)
+theme_override_colors/font_hover_color = Color(0.98, 0.8, 0.42, 1)
 theme_override_colors/font_hover_pressed_color = Color(1, 0.92, 0.7, 1)
 theme_override_colors/font_outline_color = Color(0.1, 0.06, 0.03, 1)
-theme_override_constants/outline_size = 10
+theme_override_constants/outline_size = 6
 theme_override_fonts/font = ExtResource("4_montserrat")
-theme_override_font_sizes/font_size = 40
+theme_override_font_sizes/font_size = 34
 theme_override_styles/normal = SubResource("StyleBoxEmpty_button")
-theme_override_styles/hover = SubResource("StyleBoxEmpty_button")
 theme_override_styles/pressed = SubResource("StyleBoxEmpty_button")
+theme_override_styles/hover = SubResource("StyleBoxEmpty_button")
 theme_override_styles/focus = SubResource("StyleBoxEmpty_button")
 text = "Quit"
+script = ExtResource("6_button")

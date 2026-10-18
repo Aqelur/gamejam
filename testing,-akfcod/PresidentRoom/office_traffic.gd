@@ -24,6 +24,10 @@ const Act := Visitor.Act
 const DESK_TOP := 0.78
 const DESK_Z := 0.35
 const DOOR_SPEED := 2.5         # door swings fully open in ~0.4 s
+const DOOR_OPEN := "res://assets/audio/office/door_open.wav"
+const DOOR_CLOSE := "res://assets/audio/office/door_close.wav"
+const DOOR_OPEN_DB := -8.0
+const DOOR_CLOSE_DB := -4.0
 ## Seconds after a stamp before the same proposer hands over the next paper
 ## (the stamped one is off the desk by then, see proposal_desk.gd).
 const NEXT_PAPER_DELAY := 1.5
@@ -41,6 +45,9 @@ var _proposer_t := 1.5     # seconds until the next proposer sets off
 var paused := false
 var _coffee_t := 20.0      # seconds until the steward may come again
 var _doors := {}     # door name -> {"centre": Vector3, "hold": float}
+static var _door_open: AudioStream
+static var _door_close: AudioStream
+static var _door_sounds_loaded := false
 var _nodes := {}     # waypoint name -> Vector3
 var _edges := {}     # waypoint name -> Array of names
 var _spots: Array[Dictionary] = []
@@ -113,6 +120,29 @@ func camera_pos() -> Vector3:
 	return Vector3(0, 1.22, 1.38)
 
 
+func _play_door(opening: bool, at: Vector3) -> void:
+	if paused:
+		return
+	if not _door_sounds_loaded:
+		_door_sounds_loaded = true
+		if ResourceLoader.exists(DOOR_OPEN):
+			_door_open = load(DOOR_OPEN) as AudioStream
+		if ResourceLoader.exists(DOOR_CLOSE):
+			_door_close = load(DOOR_CLOSE) as AudioStream
+	var stream := _door_open if opening else _door_close
+	if stream == null:
+		return
+	var p := AudioStreamPlayer3D.new()
+	p.stream = stream
+	p.volume_db = DOOR_OPEN_DB if opening else DOOR_CLOSE_DB
+	p.unit_size = 3.5
+	p.max_distance = 14.0
+	p.position = at
+	p.finished.connect(p.queue_free)
+	add_child(p)
+	p.play()
+
+
 func door_amount(door_name: String) -> float:
 	return room.door_amount(door_name)
 
@@ -172,8 +202,13 @@ func _process(delta: float) -> void:
 		else:
 			d.hold = maxf(0.0, d.hold - delta)
 		var target := 1.0 if d.hold > 0.0 else 0.0
-		var amount := move_toward(room.door_amount(door_name), target, delta * DOOR_SPEED)
+		var was: float = room.door_amount(door_name)
+		var amount := move_toward(was, target, delta * DOOR_SPEED)
 		room.set_door_open(door_name, amount)
+		if was <= 0.02 and amount > was:
+			_play_door(true, d.centre)
+		elif was >= 0.98 and amount < was:
+			_play_door(false, d.centre)
 
 	# the next proposer sets off once the last one has gone
 	if proposer == null:
@@ -185,12 +220,13 @@ func _process(delta: float) -> void:
 		proposer.set_meta("presented", true)
 		proposer_arrived.emit(proposer)
 
-	# coffee now and then
-	_coffee_t -= delta
-	if _coffee_t <= 0.0:
-		_coffee_t = randf_range(room.coffee_interval.x, room.coffee_interval.y)
-		if _count(Role.STEWARD) == 0:
-			_send_steward()
+	# coffee now and then — not while the tutorial (or the evening) is holding the office
+	if not paused:
+		_coffee_t -= delta
+		if _coffee_t <= 0.0:
+			_coffee_t = randf_range(room.coffee_interval.x, room.coffee_interval.y)
+			if _count(Role.STEWARD) == 0:
+				_send_steward()
 
 
 # ================================================================ spawning

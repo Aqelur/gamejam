@@ -362,14 +362,28 @@ func fade_out(time: float) -> void:
 		if is_instance_valid(p):
 			var t := create_tween()
 			t.tween_property(p, "volume_db", -60.0, time)
+			t.tween_callback(p.stop)
+
+
+## Hiss and pump off the moment the camera leaves this scene.
+func silence() -> void:
+	for p in _players:
+		if is_instance_valid(p):
+			p.stop()
+			p.queue_free()
+	_players.clear()
+	_hiss = null
+	_pump = null
+
+
+func _exit_tree() -> void:
+	silence()
 
 
 ## Training's over: sound off, freed.
 func close() -> void:
 	set_process(false)
-	for p in _players:
-		if is_instance_valid(p):
-			p.stop()
+	silence()
 	queue_free()
 
 

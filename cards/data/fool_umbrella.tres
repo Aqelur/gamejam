@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="CardData" format=3]
+
+[ext_resource type="Script" path="res://cards/card_data.gd" id="1_script"]
+
+[resource]
+script = ExtResource("1_script")
+id = "fool_umbrella"
+character_name = "The Town Fool"
+text = "Mayor, I'd like a permit to sell earthquake-proof umbrellas. They're regular umbrellas. But I say it with confidence."

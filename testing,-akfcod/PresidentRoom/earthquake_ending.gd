@@ -33,7 +33,13 @@ const ParkShrouds := preload("res://PresidentRoom/park_memorial.gd")
 
 const QUAKE_TIME := 14 * 3600 + 32 * 60
 const MAGNITUDE := 7.4
+## The recording under the roar. Quieter, and it loops: the clip is short
+## and the ending visits several places.
+const QUAKE_BED := "res://PresidentRoom/audio/quake_background.mp3"
+const QUAKE_BED_DB := -10.0
 const GOLD := Color(1.0, 0.82, 0.36)
+## Reading beats in the closing cards. day_cycle.gd stretches the waits again.
+const PACE := 1.45
 const RED := Color(0.96, 0.36, 0.3)
 const SOFT := Color(0.86, 0.88, 0.94)
 
@@ -54,12 +60,13 @@ var _trauma := 0.0
 var _t := 0.0
 var _noise := FastNoiseLite.new()
 var _tally: Control
+var _count_tween: Tween
 var _player: AudioStreamPlayer
+var _bed: AudioStreamPlayer
 var _pb: AudioStreamGeneratorPlayback
 var _brown := 0.0
 var _low := 0.0
 var _crack := 0.0
-var _clicked := false
 var _city: Node3D
 var _fade: ColorRect
 
@@ -155,11 +162,6 @@ func _process(delta: float) -> void:
 	_feed_sound(s)
 
 
-func _input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		_clicked = true
-
-
 func _exit_tree() -> void:
 	if is_instance_valid(_cam):
 		_cam.h_offset = 0.0
@@ -208,14 +210,18 @@ func show_tally(r: Dictionary) -> void:
 		box.add_child(_label(String(r.note), _spaced(_font_bold, 2), 16, GOLD))
 	box.modulate.a = 0.0
 	var t := create_tween()
+	_count_tween = t
 	t.tween_property(box, "modulate:a", 1.0, 0.35)
-	t.tween_method(func(k: float) -> void:
-		dead_n.text = thousands(roundi(float(r.dead) * k))
-		cost_n.text = money_text(float(r.damage) * k), 0.0, 1.0, 1.8) \
-		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	var dead_ref: WeakRef = weakref(dead_n)
+	var cost_ref: WeakRef = weakref(cost_n)
+	t.tween_method(_count_up.bind(dead_ref, cost_ref, int(r.dead), float(r.damage)),
+		0.0, 1.0, 1.8).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 
 
 func hide_tally() -> void:
+	if _count_tween and _count_tween.is_valid():
+		_count_tween.kill()
+	_count_tween = null
 	if _tally and is_instance_valid(_tally):
 		var old := _tally
 		var t := create_tween()
@@ -224,8 +230,56 @@ func hide_tally() -> void:
 	_tally = null
 
 
-## The last word: everything added up on black. Returns when the player
-## clicks (after which the scene starts again).
+func _count_up(k: float, dead_ref: WeakRef, cost_ref: WeakRef, dead: int, damage: float) -> void:
+	var dead_label := dead_ref.get_ref() as Label
+	var cost_label := cost_ref.get_ref() as Label
+	if dead_label == null or cost_label == null:
+		return
+	dead_label.text = thousands(roundi(float(dead) * k))
+	cost_label.text = money_text(damage * k)
+
+
+func _count_summary(k: float, dead_ref: WeakRef, cost_ref: WeakRef) -> void:
+	var dead_label := dead_ref.get_ref() as Label
+	var cost_label := cost_ref.get_ref() as Label
+	if dead_label == null or cost_label == null:
+		return
+	dead_label.text = thousands(roundi(total_dead() * k))
+	cost_label.text = money_text(total_damage() * k)
+
+
+func _shot() -> void:
+	var cycle := get_parent()
+	if cycle and cycle.has_method("ending_next_beat"):
+		cycle.ending_next_beat()
+
+
+func _hold(seconds: float) -> void:
+	var cycle := get_parent()
+	if cycle and cycle.has_method("ending_hold"):
+		await cycle.ending_hold(seconds)
+		return
+	await get_tree().create_timer(seconds).timeout
+
+
+func _clicked() -> bool:
+	var cycle := get_parent()
+	return cycle != null and cycle.has_method("ending_clicked") and cycle.ending_clicked()
+
+
+func _until_tween(t: Tween) -> void:
+	while t != null and t.is_valid() and t.is_running() and not _clicked() and is_inside_tree():
+		await get_tree().process_frame
+	if _clicked() and t != null and t.is_valid():
+		var guard := 0
+		while t.is_running() and guard < 40:
+			if not t.custom_step(2.0):
+				break
+			guard += 1
+
+
+## The last word: everything added up on black, then the bodies in the park.
+## When that picture is done, the screen goes quiet and the closing lines open.
 func show_summary() -> void:
 	hide_tally()
 	end_place()
@@ -270,55 +324,35 @@ func show_summary() -> void:
 
 	bg.modulate.a = 0.0
 	var t := create_tween()
-	t.tween_property(bg, "modulate:a", 1.0, 0.8)
+	t.tween_property(bg, "modulate:a", 1.0, 0.8 * PACE)
 	for l in lines:
-		t.tween_property(l, "modulate:a", 1.0, 0.35)
+		t.tween_property(l, "modulate:a", 1.0, 0.4 * PACE)
 		if l == dead_n:
-			t.tween_method(func(k: float) -> void:
-				dead_n.text = thousands(roundi(total_dead() * k))
-				cost_n.text = money_text(total_damage() * k), 0.0, 1.0, 2.2) \
-				.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	await t.finished
+			var dead_ref: WeakRef = weakref(dead_n)
+			var cost_ref: WeakRef = weakref(cost_n)
+			t.tween_method(_count_summary.bind(dead_ref, cost_ref),
+				0.0, 1.0, 2.2 * PACE).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	_shot()
+	await _until_tween(t)
 
 	# Then what the number means, body by body (skipped if nobody died).
-	var again := _label("Click to start again", _font_bold, 18, Color(1, 1, 1, 0.6))
-	again.modulate.a = 0.0
 	var total := total_dead()
+	var cover: Control = bg
 	if total > 0:
-		await get_tree().create_timer(2.8).timeout
-		var weight := await _show_weight(total, bg)
-		again.anchor_left = 0.0
-		again.anchor_right = 1.0
-		again.anchor_top = 0.95
-		again.anchor_bottom = 0.95
-		again.grow_vertical = Control.GROW_DIRECTION_BOTH
-		weight.add_child(again)
+		await _hold(2.8)
+		cover = await _show_weight(total, bg)
 	else:
-		v.add_child(again)
-		await get_tree().create_timer(1.0).timeout
-	var show_again := create_tween()
-	show_again.tween_property(again, "modulate:a", 1.0, 0.5)
-	await show_again.finished
-	var pulse := create_tween().set_loops()
-	pulse.tween_property(again, "modulate:a", 0.35, 0.8)
-	pulse.tween_property(again, "modulate:a", 1.0, 0.8)
-	_clicked = false
-	while not _clicked:
-		await get_tree().process_frame
-	pulse.kill()
-	get_tree().reload_current_scene()
+		await _hold(1.6)
+	await _open_outro(cover)
 
 
 ## After the summary: "X. X is just a number, but what does it actually
 ## mean?" on black. Then Central Park, one body on the grass under a black
 ## blanket, and the camera pulls back as more are laid down beside it, 4, 9,
 ## 16... faster and faster until all `total` of them lie there
-## (park_memorial.gd), and last a slow pull-back over the whole memorial,
-## then the dark comes down and it tells the player whose fault it was
-## (_blame).
-## Returns the overlay it built (the counter on it), for
-## the "click to start again" line. `summary` (the card on black) is freed
-## once the words cover it.
+## (park_memorial.gd), and last a slow pull-back over the whole memorial.
+## Returns the counter overlay. `summary` (the card on black) is freed
+## once the words cover it. The closing lines follow that picture.
 func _show_weight(total: int, summary: Control) -> Control:
 	var screen := ColorRect.new()
 	screen.name = "Weight"
@@ -328,10 +362,11 @@ func _show_weight(total: int, summary: Control) -> Control:
 	_ui.add_child(screen)
 	screen.modulate.a = 0.0
 	var t := create_tween()
-	t.tween_property(screen, "modulate:a", 1.0, 1.4)
-	await t.finished
+	t.tween_property(screen, "modulate:a", 1.0, 1.4 * PACE)
+	_shot()
+	await _until_tween(t)
 	summary.queue_free()
-	await get_tree().create_timer(0.6).timeout
+	await _hold(0.7)
 
 	# --- the words
 	var centre := CenterContainer.new()
@@ -349,14 +384,12 @@ func _show_weight(total: int, summary: Control) -> Control:
 	for l: Control in [big, line1, line2]:
 		l.modulate.a = 0.0
 		words.add_child(l)
+	await _reveal_line(big, 0.7, 1.4)
+	await _reveal_line(line1, 0.7, 1.1)
+	await _reveal_line(line2, 0.9, 2.8)
+	_shot()
 	t = create_tween()
-	t.tween_property(big, "modulate:a", 1.0, 0.7)
-	t.tween_interval(1.4)
-	t.tween_property(line1, "modulate:a", 1.0, 0.7)
-	t.tween_interval(1.1)
-	t.tween_property(line2, "modulate:a", 1.0, 0.9)
-	t.tween_interval(2.8)
-	t.tween_property(words, "modulate:a", 0.0, 1.0)
+	t.tween_property(words, "modulate:a", 0.0, 1.0 * PACE)
 
 	# meanwhile, behind the black: lay the park out
 	var field: ParkShrouds = null
@@ -366,7 +399,7 @@ func _show_weight(total: int, summary: Control) -> Control:
 		if not field.setup(_city, total):
 			field.queue_free()
 			field = null
-	await t.finished
+	await _until_tween(t)
 	centre.queue_free()
 
 	# the counter, over everything
@@ -410,14 +443,17 @@ func _show_weight(total: int, summary: Control) -> Control:
 	if field == null:
 		# no park to show: just the number
 		count.text = thousands(total)
+		_shot()
 		t = create_tween()
-		t.tween_property(count, "modulate:a", 1.0, 0.8)
-		t.tween_property(lost, "modulate:a", 1.0, 0.8)
-		await t.finished
+		t.tween_property(count, "modulate:a", 1.0, 0.9 * PACE)
+		t.tween_property(lost, "modulate:a", 1.0, 0.9 * PACE)
+		await _until_tween(t)
+		await _hold(2.4)
 		return over
 
 	# --- one body, alone on the grass
-	await get_tree().create_timer(0.5).timeout
+	_shot()
+	await _hold(0.55)
 	var aspect := 16.0 / 9.0
 	var vs := _cam.get_viewport().get_visible_rect().size
 	if vs.y > 0.0:
@@ -433,24 +469,25 @@ func _show_weight(total: int, summary: Control) -> Control:
 	if _fade and is_instance_valid(_fade):
 		_fade.color.a = 0.0
 	t = create_tween().set_parallel()
-	t.tween_property(screen, "modulate:a", 0.0, 2.0)
-	t.tween_property(count, "modulate:a", 1.0, 2.0).set_delay(0.6)
-	t.tween_method(func(k: float) -> void: place.call(1.0, 0.12 * k), 0.0, 1.0, 4.6) \
+	t.tween_property(screen, "modulate:a", 0.0, 2.0 * PACE)
+	t.tween_property(count, "modulate:a", 1.0, 2.0 * PACE).set_delay(0.7)
+	t.tween_method(func(k: float) -> void: place.call(1.0, 0.12 * k), 0.0, 1.0, 4.6 * PACE) \
 		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	await t.finished
+	await _until_tween(t)
 	screen.queue_free()
 
 	# --- then pull back: 4, 9, 16... each step quicker than the last
+	_shot()
 	var all := field.count
 	var n := 1
 	var step := 0
-	while n * n < all:
+	while n * n < all and not _clicked():
 		var m := n + 1
 		if step >= 24:
 			m += int(n * 0.05)
 		var from_count := n * n
 		var to_count := mini(m * m, all)
-		var d := maxf(0.04, 1.5 * pow(0.8, step))
+		var d := maxf(0.09, 2.15 * pow(0.86, step))
 		var creep := 0.12 if step == 0 else 0.0
 		t = create_tween()
 		t.tween_method(func(k: float) -> void:
@@ -458,15 +495,17 @@ func _show_weight(total: int, summary: Control) -> Control:
 			place.call(lerpf(float(from_count), float(to_count), k), creep * (1.0 - k))
 			count.text = thousands(roundi(lerpf(float(from_count), float(to_count), k))), 0.0, 1.0, d) \
 			.set_trans(Tween.TRANS_SINE if step < 6 else Tween.TRANS_LINEAR).set_ease(Tween.EASE_IN_OUT)
-		await t.finished
+		await _until_tween(t)
 		step += 1
-		if m * m >= all:
+		if _clicked() or m * m >= all:
 			break
 		n = m
 		if step <= 3:
-			await get_tree().create_timer(0.7 - step * 0.15).timeout
+			await _hold(0.7 - step * 0.12)
 
 	# --- all of them
+	field.settle(0, all, 1.0)
+	place.call(float(all), 0.0)
 	count.text = thousands(total)
 	await get_tree().create_timer(0.9).timeout
 	# then the slow last pull-back: the whole memorial round them
@@ -480,118 +519,52 @@ func _show_weight(total: int, summary: Control) -> Control:
 	t.parallel().tween_property(lost, "modulate:a", 1.0, 1.2).set_delay(1.8)
 	t.tween_interval(2.6)
 	await t.finished
-
-	# --- and then, over the memorial, what it was for
-	await _blame(over, counter, total, field, aspect, fov)
 	return over
 
 
-## The last words, to the player: the dark comes down over the memorial and,
-## a few lines at a time, it tells them whose fault this was. Then the dark
-## lifts and the camera rises slowly from the memorial over the wrecked city,
-## and one last line comes up.
-func _blame(over: Control, counter: Control, total: int, field: ParkShrouds,
-		aspect: float, fov: float) -> void:
-	var dim := ColorRect.new()
-	dim.name = "Blame"
-	dim.color = Color(0.0, 0.0, 0.01, 0.0)
-	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
-	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	over.add_child(dim)
-	var t := create_tween().set_parallel()
-	t.tween_property(dim, "color:a", 0.78, 3.0)
-	t.tween_property(counter, "modulate:a", 0.0, 2.0)
-	await t.finished
-
-	var groups: Array = []
-	groups.append([
-		["%s people trusted you, Mayor." % thousands(total), Color.WHITE, 34],
-		["They went to work. They picked their children up from school.", SOFT, 24],
-		["They thought someone was watching over them.", SOFT, 24]])
-	if _all_safety_approved():
-		groups.append([["You did what you could.", SOFT, 26], ["It was still not enough for them.", SOFT, 26]])
-	groups.append([
-		["You were the Mayor.", Color.WHITE, 36],
-		["This was your city.", RED, 44]])
-
-	var centre := CenterContainer.new()
-	centre.set_anchors_preset(Control.PRESET_FULL_RECT)
-	centre.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	over.add_child(centre)
-	var last_box: Control = null
-	for gi in groups.size():
-		var box := VBoxContainer.new()
-		box.alignment = BoxContainer.ALIGNMENT_CENTER
-		box.add_theme_constant_override("separation", 16)
-		box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		centre.add_child(box)
-		var lines: Array[Label] = []
-		for spec in groups[gi]:
-			var l := _label(String(spec[0]), _font_black if int(spec[2]) >= 34 else _font_bold, int(spec[2]), spec[1])
-			l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			l.custom_minimum_size.x = 1100
-			l.modulate.a = 0.0
-			box.add_child(l)
-			lines.append(l)
-		t = create_tween()
-		for l in lines:
-			t.tween_property(l, "modulate:a", 1.0, 1.1)
-			t.tween_interval(0.9 + 0.035 * l.text.length())
-		var last := gi == groups.size() - 1
-		t.tween_interval(1.6 if not last else 0.8)
-		if not last:
-			t.tween_property(box, "modulate:a", 0.0, 1.0)
-		await t.finished
-		if not last:
-			box.queue_free()
-		last_box = box
-
-	# --- the dark lifts and the camera rises slowly over the wrecked city
-	if field and is_instance_valid(_cam):
-		var from_eye := _cam.global_position
-		var from_look: Vector3 = field.frame_all(aspect, fov)[1]
-		var high: Array = field.frame_city(aspect, fov)
-		t = create_tween().set_parallel()
-		t.tween_property(last_box, "modulate:a", 0.0, 1.6)
-		t.tween_property(dim, "color:a", 0.0, 3.5).set_delay(0.6)
-		t.tween_method(func(k: float) -> void:
-			_cam.look_at_from_position(from_eye.lerp(high[0], k), from_look.lerp(high[1], k), Vector3.UP), 0.0, 1.0, 11.0) \
-			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-		await t.finished
-		await get_tree().create_timer(0.8).timeout
-	else:
-		t = create_tween()
-		t.tween_property(last_box, "modulate:a", 0.0, 1.6)
-		await t.finished
-
-	# and one quiet line under it all
-	var after := _label("They don't get another chance. You do.", _font_bold, 26, Color.WHITE)
-	after.anchor_right = 1.0
-	after.anchor_top = 0.86
-	after.anchor_bottom = 0.86
-	after.grow_vertical = Control.GROW_DIRECTION_BOTH
-	after.modulate.a = 0.0
-	over.add_child(after)
-	t = create_tween()
-	t.tween_property(after, "modulate:a", 1.0, 1.4)
-	t.tween_interval(1.4)
-	await t.finished
+func _reveal_line(line: CanvasItem, fade: float, hold: float) -> void:
+	_shot()
+	var t := create_tween()
+	t.tween_property(line, "modulate:a", 1.0, fade * PACE).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	await _until_tween(t)
+	line.modulate.a = 1.0
+	if _clicked():
+		return
+	await _hold(hold)
 
 
-## True if the player signed every proposal that would have saved lives.
-func _all_safety_approved() -> bool:
-	for id in ["seismologist_warning", "seismologist_drill", "urban_timber_bracing",
-			"interior_inspectors", "health_hospital", "agency_fire_station",
-			"agency_park_tents", "interior_police"]:
-		if not approved(id):
-			return false
-	return true
+## Park (or the toll card) fades out, the quake bed goes with it, then the
+## closing lines in menu/story_outro.tscn.
+func _open_outro(cover: Control) -> void:
+	_shot()
+	var dur := 1.4 * PACE
+	var t := create_tween()
+	t.set_parallel(true)
+	t.tween_interval(dur)
+	if is_instance_valid(cover):
+		t.tween_property(cover, "modulate:a", 0.0, dur)
+	if is_instance_valid(_fade):
+		t.tween_property(_fade, "color:a", 1.0, dur)
+	if is_instance_valid(_player):
+		t.tween_property(_player, "volume_db", -50.0, dur)
+	if is_instance_valid(_bed):
+		t.tween_property(_bed, "volume_db", -50.0, dur)
+	await _until_tween(t)
+	if is_instance_valid(cover):
+		cover.modulate.a = 0.0
+	if is_instance_valid(_fade):
+		_fade.color.a = 1.0
+	if is_instance_valid(_player):
+		_player.stop()
+	if is_instance_valid(_bed):
+		_bed.stop()
+	get_tree().change_scene_to_file("res://menu/story_outro.tscn")
 
 
 # ================================================================ sound
 
 ## A deep roar made on the fly (brown noise, low-passed), loud while the
-## ground shakes, with a crackle on every jolt. No sound files needed.
+## ground shakes, with a crackle on every jolt. The recording plays under it.
 func _start_sound() -> void:
 	var gen := AudioStreamGenerator.new()
 	gen.mix_rate = 22050.0
@@ -603,6 +576,23 @@ func _start_sound() -> void:
 	add_child(_player)
 	_player.play()
 	_pb = _player.get_stream_playback() as AudioStreamGeneratorPlayback
+	_start_bed()
+
+
+func _start_bed() -> void:
+	if not ResourceLoader.exists(QUAKE_BED):
+		return
+	var stream := load(QUAKE_BED) as AudioStreamMP3
+	if stream == null:
+		return
+	stream = stream.duplicate() as AudioStreamMP3
+	stream.loop = true
+	_bed = AudioStreamPlayer.new()
+	_bed.name = "QuakeBed"
+	_bed.stream = stream
+	_bed.volume_db = QUAKE_BED_DB
+	add_child(_bed)
+	_bed.play()
 
 
 func _feed_sound(level: float) -> void:

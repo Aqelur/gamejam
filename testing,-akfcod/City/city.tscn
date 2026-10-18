@@ -84,6 +84,7 @@
 [ext_resource type="PackedScene" path="res://City/Civic/fire_station.tscn" id="86_fire"]
 [ext_resource type="Script" path="res://City/Civic/buildable.gd" id="90_buildable"]
 [ext_resource type="PackedScene" path="res://City/Civic/central_park.tscn" id="87_central_park"]
+[ext_resource type="PackedScene" path="res://City/Civic/president_palace.tscn" id="91_palace"]
 
 [ext_resource type="Script" path="res://City/Beach/beach_terrain.gd" id="beach_terrain"]
 [ext_resource type="Shader" path="res://City/Beach/beach_sand.gdshader" id="beach_sand"]
@@ -106,18 +107,21 @@ sky_material = SubResource("ProceduralSkyMaterial_1")
 background_mode = 2
 sky = SubResource("Sky_2")
 ambient_light_source = 3
+ambient_light_energy = 1.2
+background_energy_multiplier = 1.12
 tonemap_mode = 2
 tonemap_white = 6.0
 ssao_enabled = true
 ssao_radius = 0.6
-ssao_intensity = 1.5
+ssao_intensity = 1.0
 glow_enabled = true
 glow_intensity = 0.4
 glow_hdr_threshold = 1.2
-fog_light_color = Color(0.78, 0.84, 0.9, 1)
-fog_density = 0.0035
+fog_light_color = Color(0.82, 0.88, 0.93, 1)
+fog_density = 0.0014
 adjustment_enabled = true
-adjustment_saturation = 1.1
+adjustment_brightness = 1.08
+adjustment_saturation = 1.08
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_4"]
 albedo_texture = ExtResource("3_colormap")
@@ -542,8 +546,8 @@ environment = SubResource("Environment_3")
 
 [node name="Sun" type="DirectionalLight3D" parent="." unique_id=1787186028]
 transform = Transform3D(-22.057238, -8.808596e-05, 15.444608, 12.170458, 16.577885, 17.381351, -9.508726, 21.218655, -13.57978, -268.06198, 536.73346, -246.25542)
-light_color = Color(1, 0.96, 0.9, 1)
-light_energy = 1.15
+light_color = Color(1, 0.97, 0.92, 1)
+light_energy = 1.45
 shadow_enabled = true
 directional_shadow_max_distance = 90.0
 
@@ -1075,6 +1079,9 @@ script = ExtResource("90_buildable")
 transform = Transform3D(0, 0, -26.926893, 0, 26.926893, 0, 26.926893, 0, 0, 485.89102, -0.7273283, 130.72108)
 script = ExtResource("90_buildable")
 
+[node name="PresidentPalace" parent="Districts/CivicCenter/Buildings" instance=ExtResource("91_palace")]
+transform = Transform3D(0, 0, -26.926893, 0, 26.926893, 0, 26.926893, 0, 0, 499.33502, -0.7273283, -502.0605)
+
 [node name="Props" type="Node3D" parent="Districts/CivicCenter" unique_id=595157454]
 
 [node name="streetlight1" parent="Districts/CivicCenter/Props" unique_id=1326653484 instance=ExtResource("20_streetlight")]
@@ -1123,6 +1130,9 @@ transform = Transform3D(161.56136, 0, 0, 0, 26.926893, 0, 0, 0, 161.56136, 485.8
 
 [node name="sidewalk3" parent="Districts/CivicCenter/Ground" unique_id=250783348 instance=ExtResource("12_sidewalk")]
 transform = Transform3D(161.56136, 0, 0, 0, 26.926893, 0, 0, 0, 161.56136, 485.89102, -1.804404, 130.72108)
+
+[node name="PresidentPalaceGround" parent="Districts/CivicCenter/Ground" instance=ExtResource("12_sidewalk")]
+transform = Transform3D(188.45, 0, 0, 0, 26.926893, 0, 0, 0, 296.19, 499.33502, -1.804404, -502.0605)
 
 [node name="MainStreet" type="Node3D" parent="Districts" unique_id=1898314960]
 metadata/risk_level = "medium"

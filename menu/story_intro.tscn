@@ -1,0 +1,138 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://menu/story_intro.gd" id="1_script"]
+[ext_resource type="FontFile" uid="uid://bdxkp7ecpn050" path="res://menu/fonts/Montserrat-Bold.ttf" id="2_font"]
+[ext_resource type="Texture2D" uid="uid://d3jfkhhy56uqj" path="res://menu/images/office.png" id="3_office"]
+[ext_resource type="AudioStream" path="res://menu/audio/story_intro.wav" id="4_music"]
+[ext_resource type="AudioStream" uid="uid://de7vafkasvxig" path="res://assets/audio/emergency/emergency_siren.mp3" id="5_siren"]
+[ext_resource type="AudioStream" uid="uid://dbyvyq0wlyqkm" path="res://assets/audio/city/crowd_chatter.wav" id="6_crowd"]
+[ext_resource type="AudioStream" path="res://assets/audio/emergency/crowd_screaming.wav" id="7_scream"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_skip"]
+
+[node name="StoryIntro" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_script")
+
+[node name="Music" type="AudioStreamPlayer" parent="."]
+unique_name_in_owner = true
+stream = ExtResource("4_music")
+volume_db = -10.0
+
+[node name="Siren" type="AudioStreamPlayer" parent="."]
+unique_name_in_owner = true
+stream = ExtResource("5_siren")
+volume_db = -6.0
+
+[node name="Scream" type="AudioStreamPlayer" parent="."]
+unique_name_in_owner = true
+stream = ExtResource("7_scream")
+volume_db = -10.0
+
+[node name="Crowd" type="AudioStreamPlayer" parent="."]
+unique_name_in_owner = true
+stream = ExtResource("6_crowd")
+volume_db = -16.0
+
+[node name="Office" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+modulate = Color(0.28, 0.22, 0.18, 1)
+texture = ExtResource("3_office")
+expand_mode = 1
+stretch_mode = 6
+
+[node name="Shade" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.04, 0.025, 0.015, 0.9)
+
+[node name="Copy" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -520.0
+offset_top = -180.0
+offset_right = 520.0
+offset_bottom = 180.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_constants/separation = 36
+alignment = 1
+
+[node name="Body" type="Label" parent="Copy"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.97, 0.93, 0.84, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.65)
+theme_override_constants/shadow_offset_x = 0
+theme_override_constants/shadow_offset_y = 2
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 40
+text = "Last time, they were still shouting. The sirens never stopped."
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 3
+
+[node name="Hint" type="Label" parent="Copy"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.98, 0.8, 0.42, 1)
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 18
+text = "Click to continue"
+horizontal_alignment = 1
+
+[node name="SkipButton" type="Button" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -150.0
+offset_top = 22.0
+offset_right = -28.0
+offset_bottom = 62.0
+grow_horizontal = 0
+theme_override_colors/font_color = Color(0.96, 0.93, 0.86, 0.55)
+theme_override_colors/font_hover_color = Color(0.98, 0.8, 0.42, 1)
+theme_override_colors/font_pressed_color = Color(1, 0.92, 0.7, 1)
+theme_override_fonts/font = ExtResource("2_font")
+theme_override_font_sizes/font_size = 18
+theme_override_styles/normal = SubResource("StyleBoxEmpty_skip")
+theme_override_styles/hover = SubResource("StyleBoxEmpty_skip")
+theme_override_styles/pressed = SubResource("StyleBoxEmpty_skip")
+theme_override_styles/focus = SubResource("StyleBoxEmpty_skip")
+text = "Skip"
+
+[node name="Fade" type="ColorRect" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0, 0, 0, 1)

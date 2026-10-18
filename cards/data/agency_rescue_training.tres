@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="CardData" format=3]
+
+[ext_resource type="Script" path="res://cards/card_data.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://denemegörselleri/7.jpeg" id="2_image"]
+
+[resource]
+script = ExtResource("1_script")
+id = "agency_rescue_training"
+character_name = "Head of Disaster Agency"
+image = ExtResource("2_image")
+text = "A foreign rescue team offered to train our firefighters for free. I just need your signature."
+approved_effect = Vector4i(5, 0, 10, 0)

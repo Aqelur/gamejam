@@ -31,8 +31,9 @@ extends Node3D
 ## Everything is in city units (one tile = 26.9): the fire, smoke, sparks,
 ## water and the trucks (copies of the fire station's parked Engine3) are all
 ## made here at that scale. The fire itself is textured flame tongues (a
-## flipbook drawn in code), streaking sparks that swirl up on the heat and
-## crackling bursts of sparks that pop out and fall. The fire is heard through
+## flipbook drawn in code): a white-yellow core, an orange body and a ragged
+## red rim, rising out of the windows and off the roof. Sparks streak up on
+## the heat and crackle out in bursts. The fire is heard through
 ## FIRE_SFX (looped, louder the harder it burns); sirens and water are
 ## generated on the fly.
 ##
@@ -112,9 +113,10 @@ const LATER := 6 * 60 + 20
 
 ## Scales every particle count.
 const QUALITY := 1.0
-const FLAME_HOT := Color(1.0, 0.9, 0.55)
-const FLAME := Color(1.0, 0.55, 0.12)
-const FLAME_DEEP := Color(0.75, 0.16, 0.04)
+const FLAME_HOT := Color(1.0, 0.98, 0.86)
+const FLAME_YELLOW := Color(1.0, 0.84, 0.22)
+const FLAME := Color(1.0, 0.5, 0.07)
+const FLAME_DEEP := Color(0.78, 0.1, 0.015)
 const SMOKE := Color(0.13, 0.12, 0.12, 0.8)
 const STEAM := Color(0.92, 0.93, 0.95, 0.65)
 const WATER := Color(0.78, 0.9, 1.0)
@@ -124,8 +126,8 @@ const FIRE_SFX := "res://PresidentRoom/fire sound.wav"
 const FIRE_SFX_DB := 0.0
 ## Flame flipbook: frames across and down, size of one frame in pixels.
 const FLAME_FRAMES := 4
-const FLAME_FRAME_W := 48
-const FLAME_FRAME_H := 96
+const FLAME_FRAME_W := 56
+const FLAME_FRAME_H := 120
 ## The fire shows through a few windows that shatter one after another (lowest
 ## first, so it climbs the building), not over the whole building.
 const WINDOWS_MIN := 3
@@ -1107,16 +1109,18 @@ func _roof_flames(box: AABB) -> GPUParticles3D:
 	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
 	pm.emission_box_extents = Vector3(box.size.x * 0.42, 0.05 * tile, box.size.z * 0.42)
 	pm.direction = Vector3.UP
-	pm.spread = 10.0
-	pm.initial_velocity_min = 0.55 * tile
-	pm.initial_velocity_max = 1.2 * tile
-	pm.gravity = Vector3(0.06, 0.7, 0.02) * tile
-	pm.damping_min = 0.2 * tile
-	pm.damping_max = 0.5 * tile
-	_flame_look(pm, 0.45, 0.95)
+	pm.spread = 16.0
+	pm.initial_velocity_min = 0.75 * tile
+	pm.initial_velocity_max = 1.55 * tile
+	pm.radial_velocity_min = 0.05 * tile
+	pm.radial_velocity_max = 0.22 * tile
+	pm.gravity = Vector3(0.04, 0.28, 0.02) * tile
+	pm.damping_min = 0.045 * tile
+	pm.damping_max = 0.1 * tile
+	_flame_look(pm, 0.75, 1.25)
 	var c := box.get_center()
 	var p := QuakeFX.emitter(_fx, Transform3D(Basis(), Vector3(c.x, box.end.y - 0.05 * tile, c.z)), _flame_quad(),
-		_q(200), 1.15, pm, false, 0.0)
+		_q(130), 1.25, pm, false, 0.0)
 	p.amount_ratio = 0.0
 	p.visibility_aabb = AABB(Vector3(-5, -3, -5) * tile, Vector3(10, 10, 10) * tile)
 	return p
@@ -1128,16 +1132,16 @@ func _core_flames(box: AABB) -> GPUParticles3D:
 	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
 	pm.emission_box_extents = Vector3(box.size.x * 0.32, 0.03 * tile, box.size.z * 0.32)
 	pm.direction = Vector3.UP
-	pm.spread = 8.0
-	pm.initial_velocity_min = 0.35 * tile
-	pm.initial_velocity_max = 0.8 * tile
-	pm.gravity = Vector3(0, 0.5, 0) * tile
-	pm.damping_min = 0.3 * tile
-	pm.damping_max = 0.5 * tile
-	_flame_look(pm, 0.28, 0.55, true)
+	pm.spread = 10.0
+	pm.initial_velocity_min = 0.3 * tile
+	pm.initial_velocity_max = 0.7 * tile
+	pm.gravity = Vector3(0, 0.16, 0) * tile
+	pm.damping_min = 0.07 * tile
+	pm.damping_max = 0.14 * tile
+	_flame_look(pm, 0.34, 0.62, true)
 	var c := box.get_center()
 	var p := QuakeFX.emitter(_fx, Transform3D(Basis(), Vector3(c.x, box.end.y - 0.04 * tile, c.z)), _flame_quad(),
-		_q(110), 0.6, pm, false, 0.0)
+		_q(70), 0.7, pm, false, 0.0)
 	p.amount_ratio = 0.0
 	p.visibility_aabb = AABB(Vector3(-5, -3, -5) * tile, Vector3(10, 10, 10) * tile)
 	return p
@@ -1309,37 +1313,40 @@ func _fireball(pos: Vector3, power := 1.0) -> void:
 
 
 ## Flame size (in tiles) and colour over a flame particle's life. `hot` is the
-## white-yellow heart of the fire.
+## white-yellow heart of the fire. The texture already carries the flame
+## colours, so the ramp only fades them in and cools them to red as they rise.
 func _flame_look(pm: ParticleProcessMaterial, size_min: float, size_max: float, hot := false) -> void:
 	pm.scale_min = size_min * tile
 	pm.scale_max = size_max * tile
-	pm.scale_curve = QuakeFX.curve([Vector2(0, 0.45), Vector2(0.25, 1.0), Vector2(0.7, 0.85), Vector2(1, 0.35)])
-	# tongues of flame stay upright, leaning a little
-	pm.angle_min = -14.0
-	pm.angle_max = 14.0
-	pm.angular_velocity_min = -12.0
-	pm.angular_velocity_max = 12.0
+	pm.scale_curve = QuakeFX.curve([Vector2(0, 0.4), Vector2(0.18, 1.05), Vector2(0.55, 0.82), Vector2(1, 0.12)])
+	# a little lean; the tongue itself points the way it is climbing
+	pm.angle_min = -7.0
+	pm.angle_max = 7.0
+	pm.angular_velocity_min = -6.0
+	pm.angular_velocity_max = 6.0
+	pm.particle_flag_align_y = true
 	# each flame plays the flipbook from its own frame, so they never move in step
-	pm.anim_speed_min = 0.7
-	pm.anim_speed_max = 1.4
+	pm.anim_speed_min = 0.9
+	pm.anim_speed_max = 1.7
 	pm.anim_offset_min = 0.0
 	pm.anim_offset_max = 1.0
 	pm.color = Color.WHITE
-	pm.color_initial_ramp = QuakeFX.ramp([Color(1, 1, 1), Color(1, 0.88, 0.75)], [0.0, 1.0])
+	pm.color_initial_ramp = QuakeFX.ramp([Color(1, 1, 0.94), Color(1, 0.9, 0.72)], [0.0, 1.0])
 	if hot:
 		pm.color_ramp = QuakeFX.ramp(
-			[Color(1, 1, 0.9, 0.0), Color(1, 0.98, 0.85, 1.0), Color(1, 0.85, 0.45, 0.9), Color(1, 0.55, 0.15, 0.0)],
-			[0.0, 0.1, 0.5, 1.0])
+			[Color(1, 1, 1, 0.0), Color(1, 1, 0.95, 1.0), Color(1, 0.9, 0.6, 0.85), Color(1, 0.55, 0.15, 0.0)],
+			[0.0, 0.08, 0.42, 1.0])
 	else:
 		pm.color_ramp = QuakeFX.ramp(
-			[Color(FLAME_HOT, 0.0), Color(FLAME_HOT, 1.0), Color(FLAME, 0.95), Color(FLAME_DEEP, 0.65), Color(0.25, 0.05, 0.02, 0.0)],
-			[0.0, 0.07, 0.32, 0.68, 1.0])
-	pm.lifetime_randomness = 0.35
+			[Color(1, 1, 1, 0.0), Color(1, 0.97, 0.9, 1.0), Color(1, 0.82, 0.55, 0.9), Color(1, 0.42, 0.1, 0.4), Color(0.35, 0.04, 0.0, 0.0)],
+			[0.0, 0.06, 0.32, 0.68, 1.0])
+	pm.lifetime_randomness = 0.45
 	pm.turbulence_enabled = true
-	pm.turbulence_noise_strength = 1.4
-	pm.turbulence_noise_scale = 1.1 * tile
-	pm.turbulence_influence_min = 0.05
-	pm.turbulence_influence_max = 0.16
+	pm.turbulence_noise_strength = 2.0
+	pm.turbulence_noise_scale = 0.75 * tile
+	pm.turbulence_noise_speed = Vector3(0.4, 2.2, 0.25)
+	pm.turbulence_influence_min = 0.08
+	pm.turbulence_influence_max = 0.2
 
 
 ## Flame tongues: an animated flipbook, drawn additively, faded where they
@@ -1359,12 +1366,13 @@ func _flame_quad() -> QuadMesh:
 	m.particles_anim_loop = true
 	m.vertex_color_use_as_albedo = true
 	m.albedo_texture = _flame_tex_cache
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
 	m.proximity_fade_enabled = true
 	m.proximity_fade_distance = 0.12 * tile
 	_flame_mesh = QuadMesh.new()
-	# taller than wide, and grown up from where the particle is
-	_flame_mesh.size = Vector2(0.62, 1.0)
-	_flame_mesh.center_offset = Vector3(0, 0.3, 0)
+	# a fat tongue, grown up from where the particle is
+	_flame_mesh.size = Vector2(1.35, 1.7)
+	_flame_mesh.center_offset = Vector3(0, 0.64, 0)
 	_flame_mesh.material = m
 	return _flame_mesh
 
@@ -1391,9 +1399,11 @@ func _spark_quad() -> QuadMesh:
 	return _spark_mesh
 
 
-## The flame flipbook: FLAME_FRAMES x FLAME_FRAMES frames of a flickering
-## tongue of fire (white core, orange edges, ragged tip). The noise runs round
-## a circle, so the last frame leads back into the first.
+## The flame flipbook: FLAME_FRAMES x FLAME_FRAMES frames of one fat tongue
+## of fire, with a shorter lobe beside it, like a big flame. White-hot at the
+## root, yellow through the body, red at the rounded tip. The noise runs round
+## a circle and a bright knot climbs the tongue, so the last frame leads back
+## into the first.
 static func _make_flame_texture() -> ImageTexture:
 	var fw := FLAME_FRAME_W
 	var fh := FLAME_FRAME_H
@@ -1405,29 +1415,52 @@ static func _make_flame_texture() -> ImageTexture:
 	noise.seed = 4127
 	noise.frequency = 1.0
 	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
-	noise.fractal_octaves = 2
-	var edge := Color(1.0, 0.6, 0.32)
+	noise.fractal_octaves = 3
+	var red := FLAME_DEEP
+	var orange := FLAME
+	var yellow := FLAME_YELLOW
+	var white := FLAME_HOT
 	for f in count:
 		var ang := TAU * float(f) / float(count)
-		var ox := cos(ang) * 0.8
-		var oz := sin(ang) * 0.8
+		var scroll := ang / TAU * 1.7
+		var z := sin(ang)
 		var x0 := (f % nf) * fw
 		var y0 := floori(float(f) / float(nf)) * fh
 		for py in fh:
 			var y := 1.0 - (float(py) + 0.5) / float(fh)   # 0 at the base, 1 at the tip
-			# a teardrop: round at the base, tapering to a point
-			var w := 0.8 * sqrt(clampf(y / 0.22, 0.0, 1.0)) * pow(1.0 - y, 0.75)
+			var n_sway := noise.get_noise_3d(1.7, y * 2.2 - scroll, z)
+			var sway := n_sway * (0.02 + y * 0.22) + sin(ang) * 0.06 * y
+			var height := 0.9 + 0.08 * sin(ang * 1.3)
+			var yn := y / height
+			var width := 0.78 * pow(clampf(1.0 - yn, 0.0, 1.0), 0.55)
+			width = maxf(width * (0.9 + 0.1 * sin(yn * 4.0 + ang)), 0.04)
+			var sway2 := sway + 0.34 * sin(ang + 1.1) + n_sway * y * 0.1
+			var h2 := height * (0.62 + 0.12 * sin(ang * 2.0 + 0.6))
+			var yn2 := y / h2
+			var w2 := maxf(0.46 * pow(clampf(1.0 - yn2, 0.0, 1.0), 0.5), 0.04)
+			var knot := exp(-pow((y - fposmod(scroll * 0.62, 1.0)) / 0.08, 2.0))
 			for px in fw:
 				var x := (float(px) + 0.5) / float(fw) * 2.0 - 1.0
-				var n1 := noise.get_noise_3d(x * 1.2 + 11.0, y * 2.0 + ox, oz)
-				var n2 := noise.get_noise_3d(x * 3.0, y * 4.5 + ox * 1.7, oz * 1.7 + 40.0)
-				var xd := x + n1 * 0.5 * y          # wavers more toward the tip
-				var d := 1.0 - absf(xd) / maxf(w, 0.001) if w > 0.0 else -1.0
-				d += n2 * 0.4 * (0.25 + y)          # ragged edges and tip
-				var a := smoothstep(0.0, 0.5, d) * smoothstep(0.0, 0.07, y) * (1.0 - smoothstep(0.82, 1.0, y))
-				var core := smoothstep(0.3, 0.95, d) * (1.0 - y * 0.8)
-				var col := edge.lerp(Color.WHITE, core)
-				col.a = clampf(a * (0.55 + 0.45 * core), 0.0, 1.0)
+				var n_edge := noise.get_noise_3d(x * 2.6 + 4.0, y * 5.0 - scroll * 1.5, z + 3.0)
+				var dist := absf(x - sway) / width + n_edge * 0.16 * (0.12 + yn)
+				var tongue := 0.0
+				if yn < 1.0:
+					tongue = smoothstep(0.0, 0.55, 1.0 - dist) * smoothstep(0.0, 0.04, y)
+				var dist2 := absf(x - sway2) / w2 + n_edge * 0.14 * (0.15 + yn2)
+				var lick := 0.0
+				if yn2 < 1.0:
+					lick = smoothstep(0.0, 0.5, 1.0 - dist2) * smoothstep(0.0, 0.04, y) * 0.9
+				var body := clampf(maxf(tongue, lick), 0.0, 1.0) * (1.0 - smoothstep(0.9, 1.0, y))
+				var core := 0.0
+				if yn < 1.0:
+					core = smoothstep(0.15, 0.75, 1.0 - dist) * (1.0 - clampf((yn - 0.02) / 0.9, 0.0, 1.0))
+				core = clampf(core + knot * body * 0.35, 0.0, 1.0)
+				var hot := smoothstep(0.45, 0.9, core) * (1.0 - smoothstep(0.02, 0.5, y))
+				var col := red.lerp(orange, clampf(body * 1.4, 0.0, 1.0))
+				col = col.lerp(yellow, clampf((core - 0.02) / 0.35, 0.0, 1.0))
+				col = col.lerp(white, hot)
+				var a := clampf(body * 0.62 + core * 0.32, 0.0, 0.9) * clampf(body * 2.2, 0.0, 1.0)
+				col.a = a if a >= 0.02 else 0.0
 				img.set_pixel(x0 + px, y0 + py, col)
 	return ImageTexture.create_from_image(img)
 
@@ -1622,7 +1655,9 @@ func _start_sound() -> void:
 		_fire_player.name = "FireCrackle"
 		_fire_player.stream = sfx
 		_fire_player.volume_db = -80.0
-		add_child(_fire_player)
+		# The city is drawn in a SubViewport. A player parented in there
+		# never reaches the speakers, so this one lives on the root.
+		get_tree().root.add_child(_fire_player)
 		_fire_player.play(randf() * sfx.get_length() * 0.5)
 
 
@@ -1644,6 +1679,13 @@ func _fire_stream() -> AudioStream:
 		s = s.duplicate() as AudioStream
 		s.set("loop", true)
 	return s
+
+
+func _exit_tree() -> void:
+	if _fire_player and is_instance_valid(_fire_player):
+		_fire_player.stop()
+		_fire_player.queue_free()
+	_fire_player = null
 
 
 func _feed_sound() -> void:

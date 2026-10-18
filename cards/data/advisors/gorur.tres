@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="AdvisorData" format=3]
+
+[ext_resource type="Script" path="res://cards/advisor_data.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://cards/images/advisor_gorur.jpg" id="2_portrait"]
+
+[resource]
+script = ExtResource("1_script")
+id = "gorur"
+display_name = "Prof. Naci Görür"
+portrait = ExtResource("2_portrait")
+says = "I have said it for twenty years and I will say it again: the buildings kill, not the quake. Let me check every one of them."
+effects_text = "+ The Contractor: approving costs 5 less Infrastructure.
++ Urban Planning: approving costs 5 less Money.
+- Urban Planning: denying costs 5 Awareness."
+price = 15

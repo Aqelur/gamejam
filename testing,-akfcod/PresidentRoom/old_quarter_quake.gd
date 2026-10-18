@@ -263,7 +263,7 @@ func setup(city: Node3D, works, ending) -> bool:
 			if tall and _rng.randf() < (0.35 if braced else 0.7):
 				var axis := Vector3(_rng.randf_range(-1, 1), 0, _rng.randf_range(-1, 1)).normalized()
 				lean = Basis(axis, deg_to_rad(_rng.randf_range(8.0, 24.0)))
-			_props.append({"node": pn, "orig": pn.transform, "lean": lean, "seed": _rng.randf() * 100.0,
+			_props.append({"node": weakref(pn), "orig": pn.transform, "lean": lean, "seed": _rng.randf() * 100.0,
 				"delay": _flat(pn.global_position).distance_to(_flat(_epi)) / wave, "tall": tall})
 	return true
 
@@ -430,8 +430,8 @@ func _process(delta: float) -> void:
 				_wave_pm = null
 				get_tree().create_timer(3.0, false).timeout.connect(_wave_dust.queue_free)
 	for s in _props:
-		var n: Node3D = s.node
-		if not is_instance_valid(n):
+		var n := (s.node as WeakRef).get_ref() as Node3D
+		if n == null:
 			continue
 		var lt: float = _t - s.delay
 		if lt < 0.0:

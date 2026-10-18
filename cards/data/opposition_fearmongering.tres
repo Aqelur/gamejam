@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="CardData" format=3]
+
+[ext_resource type="Script" path="res://cards/card_data.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://denemegörselleri/5.jpeg" id="2_image"]
+
+[resource]
+script = ExtResource("1_script")
+id = "opposition_fearmongering"
+character_name = "Opposition Leader"
+image = ExtResource("2_image")
+text = "The mayor is scaring people to win votes! I'll say it on every channel tonight, unless you give me a seat on your disaster council."
+denied_effect = Vector4i(-15, 0, 0, 0)
+approved_effect = Vector4i(-5, 0, -10, 0)

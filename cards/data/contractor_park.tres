@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="CardData" format=3]
+
+[ext_resource type="Script" path="res://cards/card_data.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://denemegörselleri/2.jpeg" id="2_image"]
+
+[resource]
+script = ExtResource("1_script")
+id = "contractor_park"
+character_name = "The Contractor"
+image = ExtResource("2_image")
+text = "Mayor, my bricks need a home and your park has all that empty grass. Let me store my materials there. I'll pay rent, cash, every month!"
+denied_effect = Vector4i(0, -5, 0, 5)
+approved_effect = Vector4i(0, 15, -15, -5)

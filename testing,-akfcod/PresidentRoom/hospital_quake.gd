@@ -405,6 +405,8 @@ func _wall_dust(power: float) -> void:
 ## No hospital: the floating "BUILD" sign would look silly in the ending, and a
 ## click must not start building it.
 func _hide_lot_sign() -> void:
+	if not is_instance_valid(_hosp):
+		return
 	if _hosp.get("click_to_build") != null:
 		_hosp.set("click_to_build", false)
 	for k in ["_sign", "_sub_sign"]:
@@ -779,9 +781,9 @@ func _unload(v: Dictionary) -> void:
 		var t := create_tween()
 		t.tween_interval(1.5)
 		t.tween_property(self, "_siren", 0.0, 1.0)
-	var van: Node3D = v.node
-	if not is_instance_valid(van):
+	if not is_instance_valid(v.node):
 		return
+	var van: Node3D = v.node
 	var rear := van.position - van.basis.z.normalized() * 0.4
 	var group := Node3D.new()
 	_scene.add_child(group)

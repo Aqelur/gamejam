@@ -2,55 +2,75 @@
 
 [ext_resource type="Script" uid="uid://wbq71d8gt7re" path="res://cards/card_table.gd" id="1_table"]
 [ext_resource type="Script" uid="uid://ua4nnog4858g" path="res://cards/card_data.gd" id="2_data"]
-[ext_resource type="Script" uid="uid://xr5newqamje" path="res://cards/stamp.gd" id="3_stamp"]
-[ext_resource type="Resource" path="res://cards/data/card_01.tres" id="4_c1"]
-[ext_resource type="Resource" path="res://cards/data/card_02.tres" id="5_c2"]
-[ext_resource type="Resource" path="res://cards/data/card_03.tres" id="6_c3"]
-[ext_resource type="Resource" path="res://cards/data/card_04.tres" id="7_c4"]
-[ext_resource type="Resource" path="res://cards/data/card_05.tres" id="8_c5"]
-[ext_resource type="Resource" path="res://cards/data/card_06.tres" id="9_c6"]
-[ext_resource type="Texture2D" path="res://cards/images/desk_real.jpg" id="10_desk"]
-[ext_resource type="Texture2D" path="res://cards/images/stamp_tool_approved.svg" id="11_tool_ok"]
-[ext_resource type="Texture2D" path="res://cards/images/stamp_tool_denied.svg" id="12_tool_no"]
+[ext_resource type="Script" path="res://cards/swipe_card.gd" id="3_card"]
+[ext_resource type="Script" path="res://cards/advisor_data.gd" id="4_adata"]
+[ext_resource type="PackedScene" path="res://cards/advisor_offer.tscn" id="5_offer"]
+[ext_resource type="Resource" path="res://cards/data/advisors/sengor.tres" id="6_sengor"]
+[ext_resource type="Resource" path="res://cards/data/advisors/gorur.tres" id="7_gorur"]
+[ext_resource type="Resource" path="res://cards/data/advisors/usumezsoy.tres" id="8_usumezsoy"]
+[ext_resource type="Resource" path="res://cards/data/seismologist_warning.tres" id="c_00"]
+[ext_resource type="Resource" path="res://cards/data/health_hospital.tres" id="c_01"]
+[ext_resource type="Resource" path="res://cards/data/contractor_hospital.tres" id="c_02"]
+[ext_resource type="Resource" path="res://cards/data/headman_supplies.tres" id="c_03"]
+[ext_resource type="Resource" path="res://cards/data/interior_police.tres" id="c_04"]
+[ext_resource type="Resource" path="res://cards/data/agency_fire_station.tres" id="c_05"]
+[ext_resource type="Resource" path="res://cards/data/influencer_concert.tres" id="c_06"]
+[ext_resource type="Resource" path="res://cards/data/urban_braces.tres" id="c_07"]
+[ext_resource type="Resource" path="res://cards/data/agency_park_tents.tres" id="c_08"]
+[ext_resource type="Resource" path="res://cards/data/contractor_park.tres" id="c_09"]
+[ext_resource type="Resource" path="res://cards/data/headman_signs.tres" id="c_10"]
+[ext_resource type="Resource" path="res://cards/data/seismologist_drill.tres" id="c_11"]
+[ext_resource type="Resource" path="res://cards/data/agency_rescue_training.tres" id="c_12"]
+[ext_resource type="Resource" path="res://cards/data/opposition_fearmongering.tres" id="c_13"]
+[ext_resource type="Resource" path="res://cards/data/finance_fund.tres" id="c_14"]
+[ext_resource type="Resource" path="res://cards/data/interior_inspectors.tres" id="c_15"]
+[ext_resource type="Resource" path="res://cards/data/influencer_bracelet.tres" id="c_16"]
+[ext_resource type="Resource" path="res://cards/data/fool_doorway.tres" id="c_17"]
+[ext_resource type="Resource" path="res://cards/data/fool_goat.tres" id="c_18"]
+[ext_resource type="Resource" path="res://cards/data/fool_bag.tres" id="c_19"]
+[ext_resource type="Resource" path="res://cards/data/fool_umbrella.tres" id="c_20"]
+[ext_resource type="Resource" path="res://cards/data/finance_leftover.tres" id="c_21"]
+[ext_resource type="Resource" path="res://cards/data/headman_donation.tres" id="c_22"]
+[ext_resource type="Resource" path="res://cards/data/agency_grant.tres" id="c_23"]
 [ext_resource type="Script" path="res://cards/balance_bar.gd" id="13_bar"]
 [ext_resource type="Texture2D" path="res://cards/images/icon_halk.png" id="14_halk"]
 [ext_resource type="Texture2D" path="res://cards/images/icon_para.png" id="15_para"]
 [ext_resource type="Texture2D" path="res://cards/images/icon_hazirlik.png" id="16_hazirlik"]
 [ext_resource type="Texture2D" path="res://cards/images/icon_burokrasi.png" id="17_burokrasi"]
 
-[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_clear"]
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_plate"]
-bg_color = Color(0.8, 0.67, 0.38, 1)
-border_width_left = 2
-border_width_top = 2
-border_width_right = 2
-border_width_bottom = 2
-border_color = Color(0.45, 0.35, 0.16, 1)
-corner_radius_top_left = 4
-corner_radius_top_right = 4
-corner_radius_bottom_right = 4
-corner_radius_bottom_left = 4
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_card"]
+bg_color = Color(0.95, 0.91, 0.82, 1)
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 3
+border_color = Color(0.72, 0.6, 0.38, 1)
+corner_radius_top_left = 14
+corner_radius_top_right = 14
+corner_radius_bottom_right = 14
+corner_radius_bottom_left = 14
 shadow_color = Color(0, 0, 0, 0.4)
-shadow_size = 4
-shadow_offset = Vector2(0, 3)
+shadow_size = 12
+shadow_offset = Vector2(0, 8)
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_paper"]
-bg_color = Color(0.96, 0.93, 0.84, 1)
-border_width_left = 2
-border_width_top = 2
-border_width_right = 2
-border_width_bottom = 2
-border_color = Color(0.75, 0.7, 0.6, 1)
-corner_radius_top_left = 4
-corner_radius_top_right = 4
-corner_radius_bottom_right = 4
-corner_radius_bottom_left = 4
-shadow_color = Color(0, 0, 0, 0.35)
-shadow_size = 10
-shadow_offset = Vector2(0, 6)
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_deck"]
+bg_color = Color(0.5, 0.4, 0.26, 1)
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 3
+border_color = Color(0.36, 0.28, 0.17, 1)
+corner_radius_top_left = 14
+corner_radius_top_right = 14
+corner_radius_bottom_right = 14
+corner_radius_bottom_left = 14
 
-[node name="CardTable" type="Control" unique_id=328823984]
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_choice"]
+bg_color = Color(0.08, 0.06, 0.04, 0.78)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+
+[node name="CardTable" type="Control"]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -58,32 +78,11 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_table")
-cards = Array[ExtResource("2_data")]([ExtResource("4_c1"), ExtResource("5_c2"), ExtResource("6_c3"), ExtResource("7_c4"), ExtResource("8_c5"), ExtResource("9_c6")])
+first_card = ExtResource("c_00")
+cards = Array[ExtResource("2_data")]([ExtResource("c_01"), ExtResource("c_02"), ExtResource("c_03"), ExtResource("c_04"), ExtResource("c_05"), ExtResource("c_06"), ExtResource("c_07"), ExtResource("c_08"), ExtResource("c_09"), ExtResource("c_10"), ExtResource("c_11"), ExtResource("c_12"), ExtResource("c_13"), ExtResource("c_14"), ExtResource("c_15"), ExtResource("c_16"), ExtResource("c_17"), ExtResource("c_18"), ExtResource("c_19"), ExtResource("c_20"), ExtResource("c_21"), ExtResource("c_22"), ExtResource("c_23")])
+advisors = Array[ExtResource("4_adata")]([ExtResource("6_sengor"), ExtResource("7_gorur"), ExtResource("8_usumezsoy")])
 
-[node name="Wall" type="ColorRect" parent="." unique_id=1582576048]
-visible = false
-layout_mode = 1
-anchors_preset = 10
-anchor_right = 1.0
-offset_bottom = 330.0
-grow_horizontal = 2
-mouse_filter = 2
-color = Color(0.29, 0.32, 0.35, 1)
-
-[node name="WallBand" type="ColorRect" parent="Wall" unique_id=1213317914]
-visible = false
-layout_mode = 1
-anchors_preset = 12
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_top = -70.0
-grow_horizontal = 2
-grow_vertical = 0
-mouse_filter = 2
-color = Color(0.21, 0.23, 0.26, 1)
-
-[node name="Table" type="TextureRect" parent="." unique_id=1657966641]
+[node name="Background" type="ColorRect" parent="."]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -91,234 +90,209 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
-texture = ExtResource("10_desk")
-expand_mode = 1
-stretch_mode = 0
+color = Color(0.3, 0.26, 0.21, 1)
 
-[node name="Window" type="Panel" parent="." unique_id=556972014]
-layout_mode = 1
-anchors_preset = 0
-anchor_left = 0.415625
-anchor_top = 0.102778
-anchor_right = 0.584375
-anchor_bottom = 0.522222
-offset_left = 0.0
-offset_top = 0.0
-offset_right = 0.0
-offset_bottom = 0.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-theme_override_styles/panel = SubResource("StyleBoxEmpty_clear")
-
-[node name="View" type="Panel" parent="Window" unique_id=259731681]
-clip_contents = true
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-theme_override_styles/panel = SubResource("StyleBoxEmpty_clear")
-
-[node name="PersonImage" type="TextureRect" parent="Window/View" unique_id=909305930]
+[node name="TextLabel" type="Label" parent="."]
 unique_name_in_owner = true
 layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -340.0
+offset_top = 84.0
+offset_right = 340.0
+offset_bottom = 196.0
+grow_horizontal = 2
+theme_override_colors/font_color = Color(0.96, 0.93, 0.86, 1)
+theme_override_font_sizes/font_size = 22
+text = "Kart metni"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 3
+
+[node name="NoteLabel" type="Label" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -340.0
+offset_top = 198.0
+offset_right = 340.0
+offset_bottom = 226.0
+grow_horizontal = 2
+theme_override_colors/font_color = Color(1, 0.55, 0.45, 1)
+theme_override_font_sizes/font_size = 18
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="CardSlot" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_top = 404.0
+offset_bottom = 404.0
+grow_horizontal = 2
+mouse_filter = 2
+
+[node name="Deck" type="Panel" parent="CardSlot"]
+layout_mode = 0
+offset_left = -140.0
+offset_top = -168.0
+offset_right = 140.0
+offset_bottom = 184.0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_deck")
+
+[node name="NameLabel" type="Label" parent="CardSlot"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = -200.0
+offset_top = 194.0
+offset_right = 200.0
+offset_bottom = 230.0
+theme_override_colors/font_color = Color(0.93, 0.76, 0.4, 1)
+theme_override_font_sizes/font_size = 24
+text = "Ad"
+horizontal_alignment = 1
+vertical_alignment = 1
+clip_text = true
+
+[node name="Card" type="Panel" parent="CardSlot"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = -140.0
+offset_top = -176.0
+offset_right = 140.0
+offset_bottom = 176.0
+pivot_offset = Vector2(140, 176)
+mouse_default_cursor_shape = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_card")
+script = ExtResource("3_card")
+
+[node name="Image" type="TextureRect" parent="CardSlot/Card"]
+layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+offset_left = 10.0
+offset_top = 10.0
+offset_right = -10.0
+offset_bottom = -10.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 expand_mode = 1
 stretch_mode = 6
 
-[node name="Glass" type="ColorRect" parent="Window/View" unique_id=120479222]
-visible = false
+[node name="ChoiceBand" type="Panel" parent="CardSlot/Card"]
+modulate = Color(1, 1, 1, 0)
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 3.0
+offset_top = 3.0
+offset_right = -3.0
+offset_bottom = 104.0
+grow_horizontal = 2
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_choice")
+
+[node name="ChoiceLabel" type="Label" parent="CardSlot/Card/ChoiceBand"]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+offset_left = 14.0
+offset_top = 8.0
+offset_right = -14.0
+offset_bottom = -8.0
 grow_horizontal = 2
 grow_vertical = 2
-mouse_filter = 2
-color = Color(0.7, 0.85, 0.95, 0.12)
-
-[node name="Glare" type="ColorRect" parent="Window/View" unique_id=2012329906]
-visible = false
-layout_mode = 0
-offset_left = 160.0
-offset_top = -60.0
-offset_right = 200.0
-offset_bottom = 330.0
-rotation = 0.35
-mouse_filter = 2
-color = Color(1, 1, 1, 0.08)
-
-[node name="NamePlate" type="Panel" parent="Window" unique_id=1249212954]
-layout_mode = 1
-anchors_preset = 7
-anchor_left = 0.5
-anchor_top = 1.0
-anchor_right = 0.5
-anchor_bottom = 1.0
-offset_left = -90.0
-offset_top = -32.0
-offset_right = 90.0
-offset_bottom = -4.0
-grow_horizontal = 2
-grow_vertical = 0
-mouse_filter = 2
-theme_override_styles/panel = SubResource("StyleBoxFlat_plate")
-
-[node name="NameLabel" type="Label" parent="Window/NamePlate" unique_id=1392903201]
-unique_name_in_owner = true
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-theme_override_colors/font_color = Color(0.18, 0.13, 0.06, 1)
+theme_override_colors/font_color = Color(1, 0.97, 0.9, 1)
 theme_override_font_sizes/font_size = 20
-text = "Ad"
+text = "Seçim"
 horizontal_alignment = 1
 vertical_alignment = 1
+autowrap_mode = 3
 clip_text = true
 
-[node name="BalanceStrip" type="Control" parent="." unique_id=1746203391]
+[node name="BalanceStrip" type="Control" parent="."]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 10
 anchor_right = 1.0
-offset_bottom = 56.0
+offset_bottom = 76.0
 grow_horizontal = 2
 mouse_filter = 2
 script = ExtResource("13_bar")
 icons = Array[Texture2D]([ExtResource("14_halk"), ExtResource("15_para"), ExtResource("16_hazirlik"), ExtResource("17_burokrasi")])
+icon_size = Vector2(56, 56)
+icon_spacing = 150.0
 
-[node name="PaperSlot" type="Control" parent="." unique_id=898188668]
-layout_mode = 1
-anchors_preset = 0
-anchor_left = 0.515625
-anchor_top = 0.75
-anchor_right = 0.515625
-anchor_bottom = 0.75
-offset_left = 0.0
-offset_top = 0.0
-offset_right = 0.0
-offset_bottom = 0.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-
-[node name="Paper" type="Panel" parent="PaperSlot" unique_id=171675533]
+[node name="AdvisorShelf" type="HBoxContainer" parent="."]
 unique_name_in_owner = true
 layout_mode = 0
-offset_left = -220.0
-offset_top = -48.0
-offset_right = 220.0
-offset_bottom = 48.0
-pivot_offset = Vector2(220, 48)
+offset_left = 20.0
+offset_top = 96.0
+offset_right = 340.0
+offset_bottom = 340.0
 mouse_filter = 2
-theme_override_styles/panel = SubResource("StyleBoxFlat_paper")
+theme_override_constants/separation = 12
 
-[node name="TextLabel" type="Label" parent="PaperSlot/Paper" unique_id=2091585966]
+[node name="AdvisorOffer" parent="." instance=ExtResource("5_offer")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+
+[node name="DayScreen" type="ColorRect" parent="."]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 18.0
-offset_top = 10.0
-offset_right = -18.0
-offset_bottom = -10.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_colors/font_color = Color(0.15, 0.13, 0.12, 1)
-theme_override_font_sizes/font_size = 18
-text = "Yönerge metni"
-horizontal_alignment = 1
-vertical_alignment = 1
-autowrap_mode = 3
+mouse_default_cursor_shape = 2
+color = Color(0.08, 0.06, 0.04, 0.94)
 
-[node name="Mark" type="TextureRect" parent="PaperSlot/Paper" unique_id=1285125784]
+[node name="DayLabel" type="Label" parent="DayScreen"]
 unique_name_in_owner = true
-visible = false
-layout_mode = 0
-offset_right = 124.0
-offset_bottom = 58.0
-pivot_offset = Vector2(62, 29)
-mouse_filter = 2
-expand_mode = 1
-stretch_mode = 5
-
-[node name="StampSlot" type="Control" parent="." unique_id=1616759666]
 layout_mode = 1
-anchors_preset = 0
+anchors_preset = 8
 anchor_left = 0.5
-anchor_top = 0.895833
+anchor_top = 0.5
 anchor_right = 0.5
-anchor_bottom = 0.895833
-offset_left = 0.0
-offset_top = 0.0
-offset_right = 0.0
-offset_bottom = 0.0
+anchor_bottom = 0.5
+offset_left = -400.0
+offset_top = -80.0
+offset_right = 400.0
+offset_bottom = 20.0
 grow_horizontal = 2
 grow_vertical = 2
-mouse_filter = 2
-
-[node name="AcceptStamp" type="TextureRect" parent="StampSlot" unique_id=1335572554]
-unique_name_in_owner = true
-layout_mode = 0
-offset_left = -86.0
-offset_top = -35.0
-offset_right = -8.0
-offset_bottom = 35.0
-mouse_default_cursor_shape = 2
-texture = ExtResource("11_tool_ok")
-expand_mode = 1
-stretch_mode = 5
-script = ExtResource("3_stamp")
-stamp_text = "APPROVED"
-ink_color = Color(0.12, 0.55, 0.22, 1)
-
-[node name="Label" type="Label" parent="StampSlot/AcceptStamp" unique_id=1508225938]
-layout_mode = 0
-offset_left = 8.0
-offset_top = 43.0
-offset_right = 70.0
-offset_bottom = 58.0
-mouse_filter = 2
-theme_override_font_sizes/font_size = 11
-text = "APPROVED"
+theme_override_colors/font_color = Color(0.93, 0.76, 0.4, 1)
+theme_override_font_sizes/font_size = 72
+text = "Day 1"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="RejectStamp" type="TextureRect" parent="StampSlot" unique_id=1573671950]
+[node name="DayHint" type="Label" parent="DayScreen"]
 unique_name_in_owner = true
-layout_mode = 0
-offset_left = 8.0
-offset_top = -35.0
-offset_right = 86.0
-offset_bottom = 35.0
-mouse_default_cursor_shape = 2
-texture = ExtResource("12_tool_no")
-expand_mode = 1
-stretch_mode = 5
-script = ExtResource("3_stamp")
-stamp_text = "DENIED"
-ink_color = Color(0.78, 0.12, 0.12, 1)
-
-[node name="Label" type="Label" parent="StampSlot/RejectStamp" unique_id=1966845598]
-layout_mode = 0
-offset_left = 8.0
-offset_top = 43.0
-offset_right = 70.0
-offset_bottom = 58.0
-mouse_filter = 2
-theme_override_font_sizes/font_size = 11
-text = "DENIED"
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -400.0
+offset_top = 40.0
+offset_right = 400.0
+offset_bottom = 80.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(0.85, 0.8, 0.7, 1)
+theme_override_font_sizes/font_size = 20
+text = "Click to continue"
 horizontal_alignment = 1
 vertical_alignment = 1

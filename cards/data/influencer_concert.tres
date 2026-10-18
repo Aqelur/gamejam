@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="CardData" format=3]
+
+[ext_resource type="Script" path="res://cards/card_data.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://denemegörselleri/3.jpeg" id="2_image"]
+
+[resource]
+script = ExtResource("1_script")
+id = "influencer_concert"
+character_name = "The Influencer"
+image = ExtResource("2_image")
+text = "Let me throw a concert at the park bandstand! Free entry, and everyone gets an emergency kit at the gate. One epic night, zero excuses!"
+denied_effect = Vector4i(-5, 5, 0, 0)
+approved_effect = Vector4i(15, -10, 0, 0)

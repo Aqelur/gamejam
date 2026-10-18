@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="AdvisorData" format=3]
+
+[ext_resource type="Script" path="res://cards/advisor_data.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://cards/images/advisor_sengor.jpg" id="2_portrait"]
+
+[resource]
+script = ExtResource("1_script")
+id = "sengor"
+display_name = "Prof. Celal Şengör"
+portrait = ExtResource("2_portrait")
+says = "I will not repeat myself, Mayor. Science or nonsense, choose one. I am expensive because I am right."
+effects_text = "+ Town Fool myths are marked and do nothing when approved.
++ Chief Seismologist: approving gives 5 more Awareness.
+- The Influencer: approving gives 5 less Awareness."
+price = 20

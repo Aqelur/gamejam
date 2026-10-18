@@ -436,24 +436,33 @@ func _roll(tw: Node3D, from: Vector3, to: Vector3, r: float, time: float, delay:
 	var dist := from.distance_to(to)
 	var hops := maxf(3.0, dist / (r * 9.0))
 	var spin0 := ball.basis
-	var state := {"last": 0.0}   # lambdas copy locals, so keep mutable state in a dictionary
+	var state := {"last": 0.0}
 	var t := create_tween()
+	var weed: WeakRef = weakref(tw)
+	var ball_ref: WeakRef = weakref(ball)
+	tw.tree_exiting.connect(t.kill)
 	t.tween_interval(delay)
 	t.tween_property(tw, "scale", Vector3.ONE, 0.25)
-	t.parallel().tween_method(func(k: float) -> void:
-		if not is_instance_valid(tw):
-			return
-		var g := clampf(k + 0.025 * sin(k * 11.0), 0.0, 1.0)   # gusts
-		var h := g * hops
-		var hop := absf(sin(h * PI)) * r * (0.8 + 0.5 * sin(h * 1.7))
-		var pos := from.lerp(to, g) + axis * sin(g * 6.0) * r * 0.8
-		tw.global_position = pos + Vector3.UP * (r + hop)
-		ball.basis = Basis(axis, g * dist / r) * spin0
-		if floorf(h) != floorf(state.last):   # touched down
-			QuakeFX.dust(self, pos + Vector3.UP * 0.3, r * 0.4, 5, r * 0.9, 1.3, r * 0.6, r * 1.1, SAND)
-		state.last = h,
+	t.parallel().tween_method(_roll_step.bind(weed, ball_ref, from, to, axis, r, hops, dist, spin0, state),
 		0.0, 1.0, time)
 	t.tween_property(tw, "scale", Vector3.ONE * 0.01, 0.3)
+
+
+func _roll_step(k: float, weed: WeakRef, ball_ref: WeakRef, from: Vector3, to: Vector3, axis: Vector3,
+		r: float, hops: float, dist: float, spin0: Basis, state: Dictionary) -> void:
+	var tw := weed.get_ref() as Node3D
+	var ball := ball_ref.get_ref() as Node3D
+	if tw == null or ball == null:
+		return
+	var g := clampf(k + 0.025 * sin(k * 11.0), 0.0, 1.0)
+	var h := g * hops
+	var hop := absf(sin(h * PI)) * r * (0.8 + 0.5 * sin(h * 1.7))
+	var pos := from.lerp(to, g) + axis * sin(g * 6.0) * r * 0.8
+	tw.global_position = pos + Vector3.UP * (r + hop)
+	ball.basis = Basis(axis, g * dist / r) * spin0
+	if floorf(h) != floorf(state.last):
+		QuakeFX.dust(self, pos + Vector3.UP * 0.3, r * 0.4, 5, r * 0.9, 1.3, r * 0.6, r * 1.1, SAND)
+	state.last = h
 
 
 ## A loose ball of dry twigs, `r` world units across the middle.

@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="CardData" format=3]
+
+[ext_resource type="Script" path="res://cards/card_data.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://denemegörselleri/5.jpeg" id="2_image"]
+
+[resource]
+script = ExtResource("1_script")
+id = "finance_leftover"
+character_name = "Minister of Finance"
+image = ExtResource("2_image")
+text = "There's some money left in this year's disaster budget. I'd rather keep it in the treasury, but the seismologist wants it for an awareness campaign. Shall I hand it over?"
+denied_effect = Vector4i(0, 10, 0, 0)
+approved_effect = Vector4i(10, 0, 0, 0)

@@ -123,17 +123,32 @@ const EarthquakeEnding := preload("res://PresidentRoom/earthquake_ending.gd")
 const RainStorm := preload("res://PresidentRoom/rain_storm.gd")
 const Walkout := preload("res://PresidentRoom/walkout.gd")
 const ContractorTown := preload("res://PresidentRoom/contractor_town.gd")
+const StreetWitness := preload("res://PresidentRoom/street_witness.gd")
 const PROPOSALS_DIR := "res://PresidentRoom/proposals"
 const CITY_SCENE := "res://City/city.tscn"
+const TITLE_SCENE := "res://menu/title_screen.tscn"
 const FONT_BOLD := "res://PresidentRoom/fonts/Montserrat-Bold.ttf"
 const FONT_BLACK := "res://PresidentRoom/fonts/Montserrat-ExtraBold.ttf"
 const SKY_FLASH := Color(0.93, 0.96, 1.0)
 const GOLD := Color(1.0, 0.82, 0.36)
 ## Text-to-speech speed for the evening narration (1.0 = normal).
 const TTS_RATE := 1.3
+## Ending cards and captions sit longer than the evening. A left click passes
+## the current shot; an earthquake shot speeds up instead of cutting off early,
+## so the toll afterwards still matches what happened.
+const ENDING_PACE := 1.45
+const ENDING_LINGER := 1.05
+const ENDING_HURRY := 4.0
 ## Longest a building takes to rise during the evening showcase (seconds).
 const EVENING_BUILD_TIME := 4.0
 const QUIET_DAY := "A quiet day. Nothing you signed today changed the city."
+## Soft typewriter tick under the captions. Short, so a gap keeps it from stacking.
+const TYPE_CLICK := "res://PresidentRoom/audio/click.wav"
+const TYPE_CLICK_DB := -8.0
+const TYPE_CLICK_GAP := 0.048
+## Quiet chord while the camera leaves the desk for the window.
+const DAY_TRANSITION := "res://PresidentRoom/audio/day_transition.wav"
+const DAY_TRANSITION_DB := -4.0
 
 var room                     # president_room.gd (untyped: it is a @tool script)
 var day := 1
@@ -191,15 +206,51 @@ var _oq_quake = null   # old_quarter_quake.gd once it has played (the rescue nee
 var _watching := false
 var _skip := false
 var _voice: AudioStreamPlayer   # the narration recording playing right now
+var _click: AudioStreamPlayer
+var _click_stream: AudioStream
+var _typing := false
+var _click_heard := 0
+var _click_gap := 0.0
+## The earthquake ending. _hold_open: a left click passes the shot on screen.
+## _advance: that click has landed and the current shot should let go.
+var _in_ending := false
+var _hold_open := false
+var _advance := false
+var _type_tween: Tween
+## The player is the man in the street. Clicks must not skip the shot.
+var _on_foot: StreetWitness
 
 
 func _input(event: InputEvent) -> void:
-	if not _watching or _skip:
+	if event.is_echo():
 		return
-	if event is InputEventMouseButton and event.pressed \
-			and event.button_index == MOUSE_BUTTON_LEFT:
-		_skip = true
-		get_viewport().set_input_as_handled()
+	if _on_foot and is_instance_valid(_on_foot):
+		if event is InputEventMouseMotion:
+			_on_foot.add_look((event as InputEventMouseMotion).relative)
+			get_viewport().set_input_as_handled()
+		return
+	var click := false
+	if event is InputEventMouseButton:
+		var button := event as InputEventMouseButton
+		click = button.pressed and button.button_index == MOUSE_BUTTON_LEFT
+	if _in_ending:
+		var key := event.is_action_pressed("action") or event.is_action_pressed("jump") \
+				or event.is_action_pressed("ui_accept")
+		if _hold_open and not _advance and (click or key):
+			_advance = true
+			get_viewport().set_input_as_handled()
+		return
+	if not _watching or _skip or not click:
+		return
+	_skip = true
+	get_viewport().set_input_as_handled()
+
+
+func _exit_tree() -> void:
+	if Engine.time_scale != 1.0:
+		Engine.time_scale = 1.0
+	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 
 ## Start (true) or finish (false) a skippable stretch of the evening.
@@ -242,6 +293,69 @@ func _until_done(job: Callable) -> void:
 	runner.call()
 	while not st.done and not _skip:
 		await get_tree().process_frame
+
+
+## The ending is on screen. A left click can pass the shot; no prompt is shown.
+func _arm_ending() -> void:
+	_in_ending = true
+	_hold_open = true
+	_advance = false
+
+
+## The click that passed the previous shot does not pass this one too.
+func _next_beat() -> void:
+	if Engine.time_scale != 1.0:
+		Engine.time_scale = 1.0
+	_advance = false
+
+
+func ending_next_beat() -> void:
+	_next_beat()
+
+
+func ending_hold(seconds: float) -> void:
+	await _ending_wait(seconds)
+
+
+func ending_clicked() -> bool:
+	return _advance
+
+
+## A reading pause. `paced` stretches it; a click ends it now.
+func _ending_wait(seconds: float, paced := true) -> void:
+	var left := seconds * (ENDING_PACE if paced else 1.0)
+	while left > 0.0 and not _advance and is_inside_tree():
+		await get_tree().process_frame
+		left -= get_process_delta_time()
+
+
+## Watch a quake shot for `seconds` of its own clock. A click runs the clock
+## faster until that time has passed, then the next caption still gets read.
+func _ending_watch(seconds: float) -> void:
+	var left := seconds
+	while left > 0.0 and is_inside_tree():
+		if _advance and Engine.time_scale == 1.0:
+			Engine.time_scale = ENDING_HURRY
+		await get_tree().process_frame
+		left -= get_process_delta_time()
+	if Engine.time_scale != 1.0:
+		Engine.time_scale = 1.0
+
+
+func _hurry_ending() -> void:
+	if _advance and Engine.time_scale == 1.0:
+		Engine.time_scale = ENDING_HURRY
+
+
+func _until_tween_ending(t: Tween) -> void:
+	while t and t.is_valid() and t.is_running() and not _advance and is_inside_tree():
+		await get_tree().process_frame
+	if _advance and t and t.is_valid():
+		var guard := 0
+		while t.is_running() and guard < 40:
+			if not t.custom_step(2.0):
+				break
+			guard += 1
 
 
 func setup(p_room) -> void:
@@ -389,8 +503,22 @@ func effects_for(approved: bool) -> Array[int]:
 	return current.effects(approved)
 
 
+## Money gauge is empty and approving this paper would spend money.
+## The green stamp must not land until a later stamp brings Money back above 0.
+func approve_blocked() -> bool:
+	if current == null:
+		return false
+	var fx: Array[int] = current.effects(true)
+	const MONEY := 1
+	if fx.size() <= MONEY:
+		return false
+	return fx[MONEY] < 0 and room.get_stat(MONEY) <= 0.0
+
+
 ## Apply the stamp. Returns true when that was the last proposal of the day.
 func on_stamped(approved: bool) -> bool:
+	if approved and approve_blocked():
+		return false
 	if current:
 		var fx: Array[int] = current.effects(approved)
 		for i in fx.size():
@@ -445,6 +573,7 @@ func end_day() -> void:
 	var cam: Camera3D = room.camera
 
 	# 1. turn to the window on the left
+	_play_day_transition()
 	var win: Vector3 = room.left_window_centre()
 	var normal: Vector3 = room.left_window_normal()
 	var eye := cam.global_position
@@ -518,13 +647,17 @@ func end_day() -> void:
 		_watch(true)
 		await play.call()
 		_watch(false)
-	if shown == 0:
+	const MONEY := 1
+	var broke: bool = room.get_stat(MONEY) <= 0.0
+	if shown == 0 and not broke:
 		_type_caption(QUIET_DAY)
 		_watch(true)
 		await _wait(2.5)
 		_watch(false)
 
-	if bankrupt:
+	# Money at 0 ends the run: walkout, not the next morning and not the quake.
+	# Bureaucracy at 0 ends it as the Contractor's town, unless the money is gone too.
+	if bankrupt or broke:
 		await _play_walkout()
 		return
 	if lawless:
@@ -720,21 +853,25 @@ func _ending_choices() -> Dictionary:
 
 ## The big one. Black screen, the time, then the quake seen in one place after
 ## another (same moment, the clock rewinding each time), each with its toll,
-## then everything added up. The game ends here: the summary waits for a click
-## and starts the scene again.
+## then everything added up. Captions and cards stay up longer than the
+## evening. A left click passes the shot on screen; a quake shot runs
+## faster instead of stopping halfway. The closing lines follow the summary.
 func _play_ending() -> void:
 	_watch(false)
+	_arm_ending()
 	# 1. out to black, tonight's scenes cleared away
 	_fade.color = Color(0, 0, 0, _fade.color.a)
 	var t := create_tween()
-	t.tween_property(_fade, "color:a", 1.0, 0.8)
-	t.parallel().tween_property(_caption_box, "modulate:a", 0.0, 0.5)
-	_fade_out_evening(0.6)
-	await t.finished
+	t.tween_property(_fade, "color:a", 1.0, 1.05)
+	t.parallel().tween_property(_caption_box, "modulate:a", 0.0, 0.6)
+	_fade_out_evening(0.8)
+	await _until_tween_ending(t)
 	_clear_evening()
 	_set_caption("")
 	_kicker.text = ""
 	if not _ensure_city():
+		_in_ending = false
+		_hold_open = false
 		await _back_to_office()
 		return
 	_show_city(true)
@@ -745,14 +882,17 @@ func _play_ending() -> void:
 	_rain.setup(_city, _city_cam)
 
 	# 2. the time, on black
+	_next_beat()
 	_day_label.text = "THE NEXT DAY\n14:32"
 	_day_label.modulate.a = 0.0
 	_day_label.visible = true
-	var d := create_tween()
-	d.tween_property(_day_label, "modulate:a", 1.0, 0.6)
-	d.tween_interval(1.6)
-	d.tween_property(_day_label, "modulate:a", 0.0, 0.5)
-	await d.finished
+	var d_in := create_tween()
+	d_in.tween_property(_day_label, "modulate:a", 1.0, 0.8)
+	await _until_tween_ending(d_in)
+	await _ending_wait(2.0)
+	var d_out := create_tween()
+	d_out.tween_property(_day_label, "modulate:a", 0.0, 0.65)
+	await _until_tween_ending(d_out)
 	_day_label.visible = false
 
 	_ending = EarthquakeEnding.new()
@@ -769,11 +909,14 @@ func _play_ending() -> void:
 	# (before the hospital: it counts the injured from the places before it).
 	var places: Array[Callable] = [_play_quake_old_quarter, _play_quake_rescue, _play_quake_room, _play_quake_fire,
 		_play_quake_park, _play_quake_hospital]
+	# Launch with `-- fire` to open this shot on its own.
+	if OS.get_cmdline_user_args().has("fire"):
+		places = [_play_quake_fire]
 	for play in places:
 		await play.call(_ending)
 
-	# 4. everything added up, then the dead laid out in Central Park; a click
-	# starts the game again
+	# 4. everything added up, then the dead laid out in Central Park; the
+	# closing lines follow on their own
 	_kill(_orbit)
 	_ending.set_city(_city, _fade)
 	await _ending.show_summary()
@@ -944,22 +1087,31 @@ func _play_contractor() -> void:
 
 ## Fade in from black on the city camera, wherever it now is.
 func _fade_in(time := 0.6) -> void:
+	var dur := time * (ENDING_PACE if _in_ending else 1.0)
 	var t := create_tween()
-	t.tween_property(_fade, "color:a", 0.0, time).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	t.tween_property(_fade, "color:a", 0.0, dur).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 
 
 ## Cut to black between places.
 func _cut_to_black(time := 0.5) -> void:
+	var dur := time * (ENDING_PACE if _in_ending else 1.0)
 	var t := create_tween()
-	t.tween_property(_fade, "color:a", 1.0, time)
-	t.parallel().tween_property(_caption_box, "modulate:a", 0.0, time * 0.8)
-	await t.finished
+	t.tween_property(_fade, "color:a", 1.0, dur)
+	t.parallel().tween_property(_caption_box, "modulate:a", 0.0, dur * 0.8)
+	if _in_ending:
+		await _until_tween_ending(t)
+		if _advance:
+			_fade.color.a = 1.0
+			_caption_box.modulate.a = 0.0
+	else:
+		await t.finished
 
 
 ## The Old Quarter: down in its main street at lunchtime, then the ground goes.
-## The camera rises over the quarter while every building does what the
-## player's choices made of it (old_quarter_quake.gd): unbraced, it crumbles
-## to dust with nearly everyone inside; braced, it shakes and mostly stands.
+## For a few seconds the camera is a person standing in the street: they walk
+## and look while the buildings fall and people run. Then that same camera
+## rises over the quarter (old_quarter_quake.gd): unbraced, it crumbles to
+## dust with nearly everyone inside; braced, it shakes and mostly stands.
 ## Then the toll counts up on screen.
 func _play_quake_old_quarter(ending: EarthquakeEnding) -> void:
 	var works = _ensure_old_quarter()
@@ -973,6 +1125,7 @@ func _play_quake_old_quarter(ending: EarthquakeEnding) -> void:
 	_oq_quake = oq
 
 	# 1. a calm street
+	_next_beat()
 	var low: Array = works.street_shot()
 	_kill(_orbit)
 	_city_cam.look_at_from_position(low[0], low[1], Vector3.UP)
@@ -981,23 +1134,29 @@ func _play_quake_old_quarter(ending: EarthquakeEnding) -> void:
 	_caption_box.modulate.a = 1.0
 	_show_kicker()
 	_fade_in(0.8)
-	await get_tree().create_timer(0.6).timeout
+	await _ending_wait(0.8)
 	var intro: String = oq.intro_line()
 	_type_caption(intro)
 	ending.rumble(0.08, 3.0)   # a faint tremor first
 	await _narrate(intro.replace("*", ""), null)
+	await _ending_wait(ENDING_LINGER)
 
-	# 2. the ground goes: the camera pulls up and back over the whole quarter
+	# 2. a man in the street watches the walls fall and the people run,
+	#    then this same camera rises over the quarter
+	_next_beat()
 	await _hide_caption()
 	ending.kick(0.8)
 	ending.rumble(1.0, OldQuarterQuake.SHAKE_TIME)
 	oq.start()
-	await get_tree().create_timer(1.0).timeout
+	var eye: Array = works.witness_shot()
+	_glide(eye[0], eye[1], 0.55)
+	await _walk_the_street(eye[0], eye[1], float(works._street_y), float(works._tile))
 	var wide: Array = works.district_shot()
 	_glide(wide[0], wide[1], 3.2, wide[2])
 	var crash := 0.0
-	var left: float = oq.settle_time() - 1.0
+	var left: float = oq.settle_time() - 1.2
 	while left > 0.0 and not oq.is_done():
+		_hurry_ending()
 		await get_tree().process_frame
 		var dt := get_process_delta_time()
 		left -= dt
@@ -1005,18 +1164,154 @@ func _play_quake_old_quarter(ending: EarthquakeEnding) -> void:
 		if crash <= 0.0 and oq.razed > 0:
 			ending.kick(randf_range(0.15, 0.35) * (0.4 + oq.razed_share()))
 			crash = randf_range(0.35, 0.9)
+	if Engine.time_scale != 1.0:
+		Engine.time_scale = 1.0
 
 	# 3. the dust settles: what happened, and what it cost
+	_next_beat()
 	var line: String = oq.headline()
 	_type_caption(line)
 	var r: Dictionary = oq.result()
 	ending.add_result(r)
 	ending.show_tally(r)
 	await _narrate(line.replace("*", ""), null)
-	await get_tree().create_timer(1.5).timeout
+	await _ending_wait(1.8)
+	_next_beat()
 	ending.hide_tally()
 	await _cut_to_black(0.6)
 	ending.end_place()
+
+
+## Large W A S D keys and a mouse, shown with the street hint, then freed.
+func _move_hint() -> Control:
+	var root := Control.new()
+	root.name = "MoveHint"
+	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center.offset_top = -48
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(center)
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 72)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	center.add_child(row)
+
+	var keys := VBoxContainer.new()
+	keys.alignment = BoxContainer.ALIGNMENT_CENTER
+	keys.add_theme_constant_override("separation", 10)
+	keys.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(keys)
+	var top := CenterContainer.new()
+	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	top.add_child(_keycap("W"))
+	keys.add_child(top)
+	var bottom := HBoxContainer.new()
+	bottom.alignment = BoxContainer.ALIGNMENT_CENTER
+	bottom.add_theme_constant_override("separation", 10)
+	bottom.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	keys.add_child(bottom)
+	for letter in ["A", "S", "D"]:
+		bottom.add_child(_keycap(letter))
+
+	row.add_child(_mouse_icon())
+	return root
+
+
+func _keycap(letter: String) -> Panel:
+	var panel := Panel.new()
+	panel.custom_minimum_size = Vector2(104, 104)
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var box := StyleBoxFlat.new()
+	box.bg_color = Color(0.06, 0.07, 0.1, 0.88)
+	box.border_color = GOLD
+	box.set_border_width_all(4)
+	box.set_corner_radius_all(14)
+	panel.add_theme_stylebox_override("panel", box)
+	var label := Label.new()
+	label.text = letter
+	label.set_anchors_preset(Control.PRESET_FULL_RECT)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.add_theme_font_override("font", _font_black)
+	label.add_theme_font_size_override("font_size", 52)
+	label.add_theme_color_override("font_color", Color.WHITE)
+	panel.add_child(label)
+	return panel
+
+
+func _mouse_icon() -> Control:
+	var mouse := Panel.new()
+	mouse.custom_minimum_size = Vector2(92, 140)
+	mouse.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var body := StyleBoxFlat.new()
+	body.bg_color = Color(0.06, 0.07, 0.1, 0.88)
+	body.border_color = GOLD
+	body.set_border_width_all(4)
+	body.corner_radius_top_left = 42
+	body.corner_radius_top_right = 42
+	body.corner_radius_bottom_left = 36
+	body.corner_radius_bottom_right = 36
+	mouse.add_theme_stylebox_override("panel", body)
+	var split := ColorRect.new()
+	split.color = GOLD
+	split.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	split.position = Vector2(44, 16)
+	split.size = Vector2(4, 52)
+	mouse.add_child(split)
+	var wheel := Panel.new()
+	wheel.custom_minimum_size = Vector2(16, 28)
+	wheel.position = Vector2(38, 62)
+	wheel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var wheel_box := StyleBoxFlat.new()
+	wheel_box.bg_color = GOLD
+	wheel_box.set_corner_radius_all(6)
+	wheel.add_theme_stylebox_override("panel", wheel_box)
+	mouse.add_child(wheel)
+	return mouse
+
+
+## The man in the street. A short hint, then walk and look, then hand the
+## camera back where it is.
+func _walk_the_street(eye: Vector3, look: Vector3, ground_y: float, tile: float) -> void:
+	_kill(_orbit)
+	Engine.time_scale = 1.0
+	_next_beat()
+	_caption_box.modulate.a = 1.0
+	var hint := _move_hint()
+	_ui.add_child(hint)
+	hint.modulate.a = 0.0
+	var hint_in := create_tween()
+	hint_in.tween_property(hint, "modulate:a", 1.0, 0.25)
+	_type_caption("WASD to move. Mouse to look.")
+	await _ending_wait(2.2, false)
+	await _hide_caption()
+	if is_instance_valid(hint):
+		var hint_out := create_tween()
+		hint_out.tween_property(hint, "modulate:a", 0.0, 0.2)
+		await hint_out.finished
+		hint.queue_free()
+	if not is_inside_tree():
+		return
+	var man: StreetWitness = StreetWitness.new()
+	man.name = "StreetWitness"
+	_on_foot = man
+	man.setup(_city, _city_cam, eye, look, ground_y, tile)
+	var was := Input.mouse_mode
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	var left := StreetWitness.SECONDS
+	while left > 0.0 and is_instance_valid(man) and is_inside_tree():
+		Engine.time_scale = 1.0
+		await get_tree().process_frame
+		left -= get_process_delta_time()
+	Input.mouse_mode = was
+	if is_instance_valid(man):
+		man.finish()
+	_on_foot = null
+	Engine.time_scale = 1.0
 
 
 ## Back in the Old Quarter twenty minutes later (police_rescue.gd), among the
@@ -1034,6 +1329,7 @@ func _play_quake_rescue(ending: EarthquakeEnding) -> void:
 		return
 
 	# 1. high over the ruins, the clock twenty minutes on
+	_next_beat()
 	var wide: Array = pr.wide_shot()
 	_kill(_orbit)
 	_city_cam.look_at_from_position(wide[0], wide[1], Vector3.UP)
@@ -1043,24 +1339,32 @@ func _play_quake_rescue(ending: EarthquakeEnding) -> void:
 	_show_kicker()
 	_fade_in(0.8)
 	pr.start()
-	await get_tree().create_timer(0.5).timeout
+	await _ending_wait(0.7)
 	var line: String = pr.later_line()
 	_type_caption(line)
 	await _narrate(line.replace("*", ""), null)
+	await _ending_wait(ENDING_LINGER)
 
 	# 2. down by the nearest pile while the digging goes on
+	_next_beat()
 	await _hide_caption()
 	var close: Array = pr.site_shot()
 	_glide(close[0], close[1], 2.4, close[2])
-	await get_tree().create_timer(1.2).timeout
+	await _ending_watch(1.4)
+	_next_beat()
 	line = pr.work_line()
 	_type_caption(line)
 	await _narrate(line.replace("*", ""), null)
+	await _ending_wait(ENDING_LINGER)
 	while not pr.is_done():
+		_hurry_ending()
 		await get_tree().process_frame
-	await get_tree().create_timer(0.8).timeout
+	if Engine.time_scale != 1.0:
+		Engine.time_scale = 1.0
+	await _ending_wait(0.9)
 
 	# 3. how many came out alive
+	_next_beat()
 	await _hide_caption()
 	line = pr.headline()
 	_type_caption(line)
@@ -1068,7 +1372,8 @@ func _play_quake_rescue(ending: EarthquakeEnding) -> void:
 	ending.add_result(r)
 	ending.show_tally(r)
 	await _narrate(line.replace("*", ""), null)
-	await get_tree().create_timer(1.5).timeout
+	await _ending_wait(1.8)
+	_next_beat()
 	ending.hide_tally()
 	pr.quiet(0.6)
 	await _cut_to_black(0.6)
@@ -1094,6 +1399,7 @@ func _play_quake_room(ending: EarthquakeEnding) -> void:
 		_rain.set_indoors(true)   # inside the office: no drops, rain muffled
 
 	# 1. lunchtime at the desk
+	_next_beat()
 	var calm: Array = rq.calm_shot()
 	_kill(_orbit)
 	_city_cam.look_at_from_position(calm[0], calm[1], Vector3.UP)
@@ -1102,30 +1408,38 @@ func _play_quake_room(ending: EarthquakeEnding) -> void:
 	_caption_box.modulate.a = 1.0
 	_show_kicker()
 	_fade_in(0.8)
-	await get_tree().create_timer(0.6).timeout
+	await _ending_wait(0.8)
 	var line: String = rq.intro_line()
 	_type_caption(line)
 	ending.rumble(0.08, 3.0)
 	await _narrate(line.replace("*", ""), null)
+	await _ending_wait(ENDING_LINGER)
 
 	# 2. the ground goes: under the desk, or up and running
+	_next_beat()
 	await _hide_caption()
 	ending.kick(0.8)
 	ending.rumble(1.0, RoomQuake.SHAKE_TIME)
 	rq.quake()
 	var shot: Array = rq.quake_shot()
 	_glide(shot[0], shot[1], 1.6, shot[2])
-	await get_tree().create_timer(1.0).timeout
+	await _ending_watch(1.2)
+	_next_beat()
 	line = rq.react_line()
 	_type_caption(line)
 	await _narrate(line.replace("*", ""), null)
+	await _ending_wait(ENDING_LINGER)
 	var left: float = RoomQuake.SHAKE_TIME + 4.0
 	while left > 0.0 and not rq.is_done():
+		_hurry_ending()
 		await get_tree().process_frame
 		left -= get_process_delta_time()
-	await get_tree().create_timer(0.5).timeout
+	if Engine.time_scale != 1.0:
+		Engine.time_scale = 1.0
+	await _ending_wait(0.6)
 
 	# 3. afterwards: out from under the desk, or down on the pavement
+	_next_beat()
 	await _hide_caption()
 	if rq.aware:
 		rq.recover()
@@ -1141,11 +1455,12 @@ func _play_quake_room(ending: EarthquakeEnding) -> void:
 		_glide(street[0], street[1], 0.05, street[2])
 		_caption_box.modulate.a = 1.0
 		_fade_in(0.6)
-	await get_tree().create_timer(0.6).timeout
+	await _ending_wait(0.8)
 	line = rq.after_line()
 	_type_caption(line)
 	await _narrate(line.replace("*", ""), null)
-	await get_tree().create_timer(1.5).timeout
+	await _ending_wait(1.8)
+	_next_beat()
 	await _cut_to_black(0.6)
 	if _rain:
 		_rain.set_indoors(false)
@@ -1170,6 +1485,7 @@ func _play_quake_fire(ending: EarthquakeEnding) -> void:
 	mf.burst.connect(func() -> void: ending.kick(0.7))
 
 	# 1. a busy street at lunchtime
+	_next_beat()
 	var low: Array = mf.street_shot()
 	_kill(_orbit)
 	_city_cam.look_at_from_position(low[0], low[1], Vector3.UP)
@@ -1178,24 +1494,28 @@ func _play_quake_fire(ending: EarthquakeEnding) -> void:
 	_caption_box.modulate.a = 1.0
 	_show_kicker()
 	_fade_in(0.8)
-	await get_tree().create_timer(0.6).timeout
+	await _ending_wait(0.8)
 	var intro: String = mf.intro_line()
 	_type_caption(intro)
 	ending.rumble(0.08, 3.0)
 	await _narrate(intro.replace("*", ""), null)
+	await _ending_wait(ENDING_LINGER)
 
 	# 2. the ground goes; the gas main bursts and the fire takes hold
+	_next_beat()
 	await _hide_caption()
 	ending.kick(0.8)
 	ending.rumble(1.0, QuakeFire.SHAKE_TIME)
 	mf.start()
-	await get_tree().create_timer(QuakeFire.SHAKE_TIME + 0.4).timeout
+	await _ending_watch(QuakeFire.SHAKE_TIME + 0.4)
+	_next_beat()
 	var line: String = mf.fire_line()
 	_type_caption(line)
 	await _narrate(line.replace("*", ""), null)
-	await get_tree().create_timer(0.8).timeout
+	await _ending_wait(1.1)
 
 	# 3. minutes later: the trucks come, or nobody does
+	_next_beat()
 	await _cut_to_black(0.5)
 	mf.skip_ahead()
 	var wide: Array = mf.wide_shot()
@@ -1205,7 +1525,7 @@ func _play_quake_fire(ending: EarthquakeEnding) -> void:
 	ending.begin_place("Main Street", QuakeFire.LATER)
 	_caption_box.modulate.a = 1.0
 	_fade_in(0.6)
-	await get_tree().create_timer(0.4).timeout
+	await _ending_wait(0.6)
 	if mf.fire_force:
 		mf.call_crews()
 	else:
@@ -1213,13 +1533,18 @@ func _play_quake_fire(ending: EarthquakeEnding) -> void:
 	line = mf.later_line()
 	_type_caption(line)
 	await _narrate(line.replace("*", ""), null)
+	await _ending_wait(ENDING_LINGER)
 	var left := 25.0
 	while left > 0.0 and not mf.is_done():
+		_hurry_ending()
 		await get_tree().process_frame
 		left -= get_process_delta_time()
-	await get_tree().create_timer(1.0).timeout
+	if Engine.time_scale != 1.0:
+		Engine.time_scale = 1.0
+	await _ending_wait(1.15)
 
 	# 4. what it cost (and what the crews saved)
+	_next_beat()
 	await _hide_caption()
 	line = mf.headline()
 	_type_caption(line)
@@ -1227,7 +1552,8 @@ func _play_quake_fire(ending: EarthquakeEnding) -> void:
 	ending.add_result(r)
 	ending.show_tally(r)
 	await _narrate(line.replace("*", ""), null)
-	await get_tree().create_timer(1.5).timeout
+	await _ending_wait(1.8)
+	_next_beat()
 	ending.hide_tally()
 	mf.quiet(0.6)
 	await _cut_to_black(0.6)
@@ -1254,6 +1580,7 @@ func _play_quake_park(ending: EarthquakeEnding) -> void:
 		return
 
 	# 1. a quiet lunchtime by the fountain
+	_next_beat()
 	pq.start_calm()
 	var low: Array = pq.empty_shot()
 	_kill(_orbit)
@@ -1263,24 +1590,28 @@ func _play_quake_park(ending: EarthquakeEnding) -> void:
 	_caption_box.modulate.a = 1.0
 	_show_kicker()
 	_fade_in(0.8)
-	await get_tree().create_timer(0.6).timeout
+	await _ending_wait(0.8)
 	var line: String = pq.intro_line()
 	_type_caption(line)
 	ending.rumble(0.08, 3.0)
 	await _narrate(line.replace("*", ""), null)
+	await _ending_wait(ENDING_LINGER)
 
 	# 2. the ground goes: everyone drops and covers, nothing falls on them
+	_next_beat()
 	await _hide_caption()
 	ending.kick(0.8)
 	ending.rumble(1.0, CentralParkQuake.SHAKE_TIME)
 	pq.quake()
-	await get_tree().create_timer(CentralParkQuake.SHAKE_TIME + 0.4).timeout
+	await _ending_watch(CentralParkQuake.SHAKE_TIME + 0.4)
+	_next_beat()
 	line = pq.shake_line()
 	_type_caption(line)
 	await _narrate(line.replace("*", ""), null)
-	await get_tree().create_timer(0.6).timeout
+	await _ending_wait(0.9)
 
 	# 3. minutes later: the town is here, or it isn't
+	_next_beat()
 	await _cut_to_black(0.5)
 	pq.skip_ahead()
 	var wide: Array = pq.drill_shot()
@@ -1290,15 +1621,16 @@ func _play_quake_park(ending: EarthquakeEnding) -> void:
 	ending.begin_place("Central Park", CentralParkQuake.LATER)
 	_caption_box.modulate.a = 1.0
 	_fade_in(0.6)
-	await get_tree().create_timer(0.4).timeout
+	await _ending_wait(0.6)
 	pq.duck(true)
 	line = pq.later_line()
 	_type_caption(line)
 	await _narrate(line.replace("*", ""), null)
 	pq.duck(false)
-	await get_tree().create_timer(0.8).timeout
+	await _ending_wait(1.15)
 
 	# 4. the night ahead: over to the tents if there are any, then the toll
+	_next_beat()
 	await _hide_caption()
 	if pq.tents:
 		var shot: Array = pq.camp_shot()
@@ -1310,7 +1642,8 @@ func _play_quake_park(ending: EarthquakeEnding) -> void:
 	ending.show_tally(r)
 	pq.duck(true)
 	await _narrate(line.replace("*", ""), null)
-	await get_tree().create_timer(1.8).timeout
+	await _ending_wait(2.2)
+	_next_beat()
 	ending.hide_tally()
 	pq.fade_out(0.6)
 	await _cut_to_black(0.6)
@@ -1336,6 +1669,7 @@ func _play_quake_hospital(ending: EarthquakeEnding) -> void:
 	hq.fell.connect(func() -> void: ending.kick(0.9))
 
 	# 1. lunchtime at the Civic Center
+	_next_beat()
 	var calm: Array = hq.calm_shot()
 	_kill(_orbit)
 	_city_cam.look_at_from_position(calm[0], calm[1], Vector3.UP)
@@ -1344,30 +1678,37 @@ func _play_quake_hospital(ending: EarthquakeEnding) -> void:
 	_caption_box.modulate.a = 1.0
 	_show_kicker()
 	_fade_in(0.8)
-	await get_tree().create_timer(0.6).timeout
+	await _ending_wait(0.8)
 	var line: String = hq.intro_line()
 	_type_caption(line)
 	ending.rumble(0.08, 3.0)
 	await _narrate(line.replace("*", ""), null)
+	await _ending_wait(ENDING_LINGER)
 
 	# 2. the ground goes; the camera pulls back to watch it hold, or fall
+	_next_beat()
 	await _hide_caption()
 	ending.kick(0.8)
 	ending.rumble(1.0, OldQuarterQuake.SHAKE_TIME)
 	hq.quake()
-	await get_tree().create_timer(0.8).timeout
+	await _ending_watch(1.0)
 	var wide: Array = hq.quake_shot()
 	_glide(wide[0], wide[1], 3.2, wide[2])
 	var left: float = hq.settle_time()
 	while left > 0.0 and not hq.is_done():
+		_hurry_ending()
 		await get_tree().process_frame
 		left -= get_process_delta_time()
+	if Engine.time_scale != 1.0:
+		Engine.time_scale = 1.0
+	_next_beat()
 	line = hq.shake_line()
 	_type_caption(line)
 	await _narrate(line.replace("*", ""), null)
-	await get_tree().create_timer(0.6).timeout
+	await _ending_wait(0.9)
 
 	# 3. half an hour later: the injured, and somewhere to take them or not
+	_next_beat()
 	await _cut_to_black(0.5)
 	hq.skip_ahead()
 	var later: Array = hq.later_shot()
@@ -1377,18 +1718,23 @@ func _play_quake_hospital(ending: EarthquakeEnding) -> void:
 	ending.begin_place("Civic Center", HospitalQuake.LATER)
 	_caption_box.modulate.a = 1.0
 	_fade_in(0.6)
-	await get_tree().create_timer(0.4).timeout
+	await _ending_wait(0.6)
 	hq.arrive()
 	line = hq.later_line()
 	_type_caption(line)
 	await _narrate(line.replace("*", ""), null)
+	await _ending_wait(ENDING_LINGER)
 	var wait := 10.0
 	while wait > 0.0 and not hq.arrived():
+		_hurry_ending()
 		await get_tree().process_frame
 		wait -= get_process_delta_time()
-	await get_tree().create_timer(0.8).timeout
+	if Engine.time_scale != 1.0:
+		Engine.time_scale = 1.0
+	await _ending_wait(0.95)
 
 	# 4. what it cost
+	_next_beat()
 	await _hide_caption()
 	line = hq.headline()
 	_type_caption(line)
@@ -1396,7 +1742,8 @@ func _play_quake_hospital(ending: EarthquakeEnding) -> void:
 	ending.add_result(r)
 	ending.show_tally(r)
 	await _narrate(line.replace("*", ""), null)
-	await get_tree().create_timer(1.8).timeout
+	await _ending_wait(2.2)
+	_next_beat()
 	ending.hide_tally()
 	hq.quiet(0.6)
 	await _cut_to_black(0.6)
@@ -1461,14 +1808,21 @@ func _glide(to: Vector3, look: Vector3, time: float, creep := Vector3.ZERO) -> v
 	var p0 := _city_cam.global_position
 	var l0 := p0 - _city_cam.global_basis.z * p0.distance_to(look)
 	_orbit = create_tween()
+	var dur := time * (ENDING_PACE if _in_ending else 1.0)
 	_orbit.tween_method(func(k: float) -> void:
-		_city_cam.look_at_from_position(p0.lerp(to, k), l0.lerp(look, k), Vector3.UP), 0.0, 1.0, time) \
+		_city_cam.look_at_from_position(p0.lerp(to, k), l0.lerp(look, k), Vector3.UP), 0.0, 1.0, dur) \
 		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	if creep != Vector3.ZERO:
 		_orbit.tween_method(func(k: float) -> void:
 			_city_cam.look_at_from_position(to + creep * k, look, Vector3.UP), 0.0, 1.0, 20.0) \
 			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	await _wait(time)
+	if _in_ending:
+		var left := dur
+		while left > 0.0 and is_inside_tree():
+			await get_tree().process_frame
+			left -= get_process_delta_time()
+	else:
+		await _wait(time)
 
 
 # ================================================================ old quarter
@@ -1593,6 +1947,7 @@ func _play_training(data: Resource, approved: bool) -> void:
 	await _narrate(spoken, data.voice(approved))
 	_training.duck(false)
 	await _wait(0.8)
+	_training.silence()
 
 
 # ================================================================ shelter tents
@@ -1743,14 +2098,17 @@ func _play_cutscene(data: Resource, approved: bool) -> void:
 
 ## About how long it takes to say `text`, in seconds.
 func _speech_time(text: String) -> float:
-	return clampf(text.split(" ", false).size() / 3.4, 2.0, 30.0)
+	var words := text.split(" ", false).size()
+	if _in_ending:
+		return clampf(float(words) / 2.4, 2.8, 42.0)
+	return clampf(float(words) / 3.4, 2.0, 30.0)
 
 
 ## Read `text` aloud: the recording if there is one, else text-to-speech
 ## (Project Settings > Audio > General > Text to Speech must be on), else
 ## just wait as long as reading it would take. Returns when it's done.
 func _narrate(text: String, stream: AudioStream) -> void:
-	if _skip:
+	if _skip or (_in_ending and _advance):
 		return
 	var limit := _speech_time(text) * 2.0 + 3.0
 	var waited := 0.0
@@ -1761,20 +2119,22 @@ func _narrate(text: String, stream: AudioStream) -> void:
 		p.play()
 		_voice = p
 		limit = maxf(stream.get_length(), 1.0) + 1.0
-		while p.playing and waited < limit and not _skip:
+		while p.playing and waited < limit and not _skip and not (_in_ending and _advance):
 			await get_tree().process_frame
 			waited += get_process_delta_time()
 		p.stop()
 		p.queue_free()
+		_voice = null
 		return
 	if _tts_ready():
 		DisplayServer.tts_stop()
-		DisplayServer.tts_speak(text, _tts_voice, 80, 1.0, TTS_RATE)
+		var rate := 1.0 if _in_ending else TTS_RATE
+		DisplayServer.tts_speak(text, _tts_voice, 80, 1.0, rate)
 		var started := false
 		while waited < limit:
 			await get_tree().process_frame
 			waited += get_process_delta_time()
-			if _skip:
+			if _skip or (_in_ending and _advance):
 				DisplayServer.tts_stop()
 				return
 			if DisplayServer.tts_is_speaking():
@@ -1784,7 +2144,18 @@ func _narrate(text: String, stream: AudioStream) -> void:
 		if started:
 			return
 		push_warning("DayCycle: text-to-speech didn't start, showing the caption only")
-	await _wait(maxf(_speech_time(text) - waited, 0.5))
+	var remain := maxf(_speech_time(text) - waited, 0.7 if _in_ending else 0.5)
+	if _in_ending:
+		await _until_advance(remain)
+	else:
+		await _wait(remain)
+
+
+func _until_advance(seconds: float) -> void:
+	var left := seconds
+	while left > 0.0 and not _advance and is_inside_tree():
+		await get_tree().process_frame
+		left -= get_process_delta_time()
 
 
 func _tts_ready() -> bool:
@@ -2130,16 +2501,99 @@ func _type_caption(text: String) -> void:
 	_caption.visible_ratio = 0.0
 	_caption.modulate.a = 0.0
 	_caption_box.modulate.a = 1.0
-	var t := create_tween().set_parallel()
-	t.tween_property(_caption, "modulate:a", 1.0, 0.35)
-	t.tween_property(_caption, "visible_ratio", 1.0, clampf(text.length() * 0.028, 0.8, 2.6)) \
+	_click_heard = 0
+	_click_gap = 0.0
+	_typing = true
+	set_process(true)
+	if _type_tween and _type_tween.is_valid():
+		_type_tween.kill()
+	var per := 0.04 if _in_ending else 0.028
+	var type_time := 0.8
+	if _in_ending:
+		type_time = clampf(text.length() * per, 1.2, 4.2)
+	else:
+		type_time = clampf(text.length() * per, 0.8, 2.6)
+	_type_tween = create_tween().set_parallel()
+	_type_tween.tween_property(_caption, "modulate:a", 1.0, 0.5 if _in_ending else 0.35)
+	_type_tween.tween_property(_caption, "visible_ratio", 1.0, type_time) \
 		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 
 
+func _process(delta: float) -> void:
+	if not _typing or _caption == null:
+		_typing = false
+		set_process(false)
+		return
+	_click_gap = maxf(_click_gap - delta, 0.0)
+	if _caption.visible_ratio >= 0.999:
+		_typing = false
+		set_process(false)
+		return
+	var shown := _caption.get_visible_characters()
+	if shown < 0:
+		shown = _caption.get_total_character_count()
+	var plain := _caption.get_parsed_text()
+	while _click_heard < shown:
+		var ch := plain[_click_heard] if _click_heard < plain.length() else " "
+		_click_heard += 1
+		if _click_gap > 0.0 or not _click_letter(ch):
+			continue
+		_play_click()
+		_click_gap = TYPE_CLICK_GAP
+		break
+
+
+## Letters and digits only, so spaces and punctuation stay quiet.
+func _click_letter(ch: String) -> bool:
+	if ch.length() != 1:
+		return false
+	var c := ch.unicode_at(0)
+	return (c >= 48 and c <= 57) or (c >= 65 and c <= 90) or (c >= 97 and c <= 122)
+
+
+func _play_day_transition() -> void:
+	if not ResourceLoader.exists(DAY_TRANSITION):
+		return
+	var stream := load(DAY_TRANSITION) as AudioStream
+	if stream == null:
+		return
+	var p := AudioStreamPlayer.new()
+	p.stream = stream
+	p.volume_db = DAY_TRANSITION_DB
+	add_child(p)
+	p.finished.connect(p.queue_free)
+	p.play()
+
+
+func _play_click() -> void:
+	if _click_stream == null:
+		if not ResourceLoader.exists(TYPE_CLICK):
+			return
+		_click_stream = load(TYPE_CLICK) as AudioStream
+		if _click_stream == null:
+			return
+	if _click == null or not is_instance_valid(_click):
+		_click = AudioStreamPlayer.new()
+		_click.stream = _click_stream
+		add_child(_click)
+	_click.volume_db = TYPE_CLICK_DB
+	_click.pitch_scale = randf_range(0.94, 1.06)
+	_click.play()
+
+
 func _hide_caption() -> void:
+	_typing = false
+	if _type_tween and _type_tween.is_valid():
+		_type_tween.kill()
+	var dur := 0.4 if _in_ending else 0.25
 	var t := create_tween()
-	t.tween_property(_caption, "modulate:a", 0.0, 0.25)
-	await t.finished
+	t.tween_property(_caption, "modulate:a", 0.0, dur)
+	if _in_ending:
+		await _until_tween_ending(t)
+		if _advance:
+			_caption.modulate.a = 0.0
+	else:
+		await t.finished
 
 
 ## *word* in a caption is drawn heavier and in gold.

@@ -46,6 +46,13 @@ const SHIN := 0.41
 const UPPER_ARM := 0.28
 const FOREARM := 0.26
 const EYE_Y := 0.115       # eye height above the head joint
+## One cleaned footfall from "step_sound" by theonlypkmnmaster, Freesound 165181.
+const STEP_SOUND := "res://assets/audio/office/footstep.wav"
+## Loudest a step gets, when they are beside the desk. Quieter than a voice.
+const STEP_NEAR_DB := -22.0
+const STEP_FAR_DB := -48.0
+const STEP_NEAR := 1.4
+const STEP_FAR := 8.0
 
 # ---------------------------------------------------------------- public state
 var role := Role.AIDE
@@ -107,6 +114,9 @@ var _cap: Node3D
 
 static var _mats := {}
 static var _meshes := {}
+static var _step_sound: AudioStream
+static var _step_loaded := false
+var _step_player: AudioStreamPlayer3D
 
 
 # ================================================================ setup
@@ -224,7 +234,10 @@ func _update_walk(delta: float) -> void:
 		var spd := walk_speed * clampf(cos(turn), 0.25, 1.0) * (0.35 + 0.65 * _moving)
 		var step := minf(spd * delta, dist)
 		position += dir * step
+		var prev_phase := _phase
 		_phase += step / 1.45 * TAU
+		if _moving > 0.45:
+			_footstep(prev_phase)
 	_walk_pose()
 	# when walking near the player, glance at them now and then
 	_has_look = false
@@ -549,6 +562,50 @@ func _idle_pose() -> void:
 		_tray_pose(1.0)
 	elif _prop and _prop.visible:
 		_hold_prop_pose(1.0)
+
+
+## Left foot lands at PI/2, right foot at 3PI/2, once per stride.
+func _footstep(prev: float) -> void:
+	var a := fposmod(prev, TAU)
+	var b := fposmod(_phase, TAU)
+	if _phase_crossed(a, b, PI * 0.5):
+		_play_step(0.96)
+	elif _phase_crossed(a, b, PI * 1.5):
+		_play_step(1.04)
+
+
+func _phase_crossed(a: float, b: float, mark: float) -> bool:
+	if b >= a:
+		return a < mark and b >= mark
+	return a < mark or b >= mark
+
+
+func _play_step(pitch: float) -> void:
+	if traffic != null and traffic.paused:
+		return
+	if not _step_loaded:
+		_step_loaded = true
+		if ResourceLoader.exists(STEP_SOUND):
+			_step_sound = load(STEP_SOUND) as AudioStream
+	if _step_sound == null:
+		return
+	if _step_player == null:
+		_step_player = AudioStreamPlayer3D.new()
+		_step_player.stream = _step_sound
+		_step_player.attenuation_model = AudioStreamPlayer3D.ATTENUATION_DISABLED
+		add_child(_step_player)
+	_step_player.volume_db = _step_db()
+	_step_player.pitch_scale = pitch * randf_range(0.97, 1.03)
+	_step_player.play()
+
+
+## Full volume beside the chair, falling off to nothing across the room.
+func _step_db() -> float:
+	if traffic == null:
+		return STEP_FAR_DB
+	var dist := global_position.distance_to(traffic.camera_pos())
+	var t := clampf((dist - STEP_NEAR) / (STEP_FAR - STEP_NEAR), 0.0, 1.0)
+	return lerpf(STEP_NEAR_DB, STEP_FAR_DB, t * t)
 
 
 func _walk_pose() -> void:

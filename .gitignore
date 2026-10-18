@@ -19,6 +19,12 @@ export_credentials.cfg
 data_*/
 mono_crash.*.json
 
+# Junctions that expose testing,-akfcod folders at the project root
+/PresidentRoom
+/City
+/Earthquake
+/Models
+
 # Export outputs
 *.exe
 # Uncomment if your project does not version PCK files as runtime dependencies.
