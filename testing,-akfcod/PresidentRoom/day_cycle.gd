@@ -90,6 +90,17 @@ extends Node
 ## out of the palace alone and quietly leaves town along the back street.
 ## Then a card on black with what happened and a tip, and a click starts the
 ## game again. room.test_walkout skips the desk and plays it straight away.
+##
+## THE CONTRACTOR'S TOWN. If a stamp leaves Bureaucracy at 0 (and Money is
+## not also gone, which plays the walkout instead) the day ends there and
+## then, the same way. Its evening plays as usual, but there is no next
+## morning and no earthquake: nobody is left to enforce the rules, and the
+## Contractor takes over (_play_contractor, contractor_town.gd). The camera
+## drifts slowly over the town while construction fences and "COMING SOON:
+## 12 FLOORS" boards grow up one by one around the empty lots, round Central
+## Park and along Main Street; nobody is shown. Then a card on black with
+## what happened and a tip, and a click starts the game again.
+## room.test_contractor skips the desk and plays it straight away.
 
 signal day_started(day: int)
 signal day_ended(day: int)
@@ -111,6 +122,7 @@ const HospitalQuake := preload("res://PresidentRoom/hospital_quake.gd")
 const EarthquakeEnding := preload("res://PresidentRoom/earthquake_ending.gd")
 const RainStorm := preload("res://PresidentRoom/rain_storm.gd")
 const Walkout := preload("res://PresidentRoom/walkout.gd")
+const ContractorTown := preload("res://PresidentRoom/contractor_town.gd")
 const PROPOSALS_DIR := "res://PresidentRoom/proposals"
 const CITY_SCENE := "res://City/city.tscn"
 const FONT_BOLD := "res://PresidentRoom/fonts/Montserrat-Bold.ttf"
@@ -167,6 +179,10 @@ var _rain: RainStorm = null   # rain_storm.gd: rain and thunder over the ending
 var _walkout = null   # walkout.gd while it plays
 ## Money hit 0: the day ends now and the walkout replaces the next morning.
 var bankrupt := false
+var _contractor = null   # contractor_town.gd while it plays
+## Bureaucracy hit 0: the day ends now and the Contractor's town replaces the
+## next morning (unless Money hit 0 too: then it's the walkout).
+var lawless := false
 var _oq_quake = null   # old_quarter_quake.gd once it has played (the rescue needs its rubble)
 ## Left-click while an evening event is on screen skips to the next one.
 ## _watching: an event (or the opening bird's-eye shot) is playing and can be
@@ -391,7 +407,9 @@ func on_stamped(approved: bool) -> bool:
 	_decided += 1
 	if room.get_stat(1) <= 0.0:
 		bankrupt = true   # nobody can be paid: no more papers today
-	return bankrupt or _decided >= _day_length
+	if room.get_stat(3) <= 0.0:
+		lawless = true    # nobody enforces the rules: no more papers today
+	return bankrupt or lawless or _decided >= _day_length
 
 
 ## Put the proposal `id` that was just unlocked on the desk next. It takes the
@@ -509,6 +527,9 @@ func end_day() -> void:
 	if bankrupt:
 		await _play_walkout()
 		return
+	if lawless:
+		await _play_contractor()
+		return
 	if room.ending_after_day > 0 and day >= room.ending_after_day:
 		await _play_ending()
 		return
@@ -609,6 +630,19 @@ func start_walkout_now(approved_ids: Array) -> void:
 	bankrupt = true
 	if await _skip_to_city(approved_ids):
 		await _play_walkout()
+
+
+## Testing: skip the desk and play the Contractor's town now, with
+## Bureaucracy at 0 and `approved_ids` approved (president_room.gd
+## test_contractor / test_approved).
+func start_contractor_now(approved_ids: Array) -> void:
+	if busy:
+		return
+	busy = true
+	room.set_stat(3, 0.0, false)
+	lawless = true
+	if await _skip_to_city(approved_ids):
+		await _play_contractor()
 
 
 ## For the test shortcuts: straight to the city on black, with what earlier
@@ -834,6 +868,78 @@ func _play_walkout() -> void:
 	await _narrate(Walkout.TEXT, null)
 	await _walkout.show_tip()
 	await _walkout.wait_restart()
+
+
+# ================================================================ the contractor's town
+
+## Bureaucracy is gone. The weeks after, the camera drifts slowly over the
+## town while the Contractor's fences and COMING SOON boards grow up one by
+## one; a card on black says what happened and what to learn from it. The
+## game ends here: a click starts the scene again. See contractor_town.gd.
+func _play_contractor() -> void:
+	_watch(false)
+	# 1. out to black, tonight's scenes cleared away
+	_fade.color = Color(0, 0, 0, _fade.color.a)
+	var t := create_tween()
+	t.tween_property(_fade, "color:a", 1.0, 0.8)
+	t.parallel().tween_property(_caption_box, "modulate:a", 0.0, 0.5)
+	_fade_out_evening(0.6)
+	await t.finished
+	_clear_evening()
+	_set_caption("")
+	_kicker.text = ""
+	_contractor = ContractorTown.new()
+	_contractor.name = "ContractorTown"
+	if _ensure_city():
+		_show_city(true)
+		_city.add_child(_contractor)
+		_contractor.setup(_city, _font_bold, _font_black)
+	else:
+		add_child(_contractor)
+		_contractor.setup(null, _font_bold, _font_black)
+
+	if _contractor.has_sites():
+		# 2. the time, on black
+		_day_label.text = "THE WEEKS THAT FOLLOWED"
+		_day_label.modulate.a = 0.0
+		_day_label.visible = true
+		var d := create_tween()
+		d.tween_property(_day_label, "modulate:a", 1.0, 0.6)
+		d.tween_interval(1.4)
+		d.tween_property(_day_label, "modulate:a", 0.0, 0.5)
+		await d.finished
+		_day_label.visible = false
+
+		# 3. slowly over the town; fences and boards grow up as it passes
+		var start: Array = _contractor.start_shot()
+		_kill(_orbit)
+		_city_cam.look_at_from_position(start[0], start[1], Vector3.UP)
+		var on_part := func(text: String) -> void:
+			_kicker.text = text
+			_caption_box.modulate.a = 1.0
+			_show_kicker()
+		_contractor.kicker_changed.connect(on_part)
+		_fade_in(0.8)
+		_watch(true)
+		_contractor.fly(_city_cam)
+		while not _contractor.is_done() and not _skip:
+			await get_tree().process_frame
+		_watch(false)
+		_contractor.finish()
+		_contractor.kicker_changed.disconnect(on_part)
+		var out := create_tween()
+		out.tween_property(_fade, "color:a", 1.0, 1.4)
+		out.parallel().tween_property(_caption_box, "modulate:a", 0.0, 1.0)
+		await out.finished
+
+	# 4. what happened, and what to take from it; a click starts again
+	_kill(_orbit)
+	_kicker.text = ""
+	await _contractor.show_card(_ui)
+	_skip = false
+	await _narrate(ContractorTown.TEXT, null)
+	await _contractor.show_tip()
+	await _contractor.wait_restart()
 
 
 ## Fade in from black on the city camera, wherever it now is.
@@ -1136,6 +1242,9 @@ func _play_quake_fire(ending: EarthquakeEnding) -> void:
 ## up (filling up, or standing empty), and the toll's footnote says whether
 ## there is enough to last, or where everyone will stay.
 func _play_quake_park(ending: EarthquakeEnding) -> void:
+	# the rain belongs to the quake and the fire only: it stops here (still black)
+	if _rain:
+		_rain.stop()
 	var pq = CentralParkQuake.new()
 	pq.name = "CentralParkQuake"
 	_city.add_child(pq)

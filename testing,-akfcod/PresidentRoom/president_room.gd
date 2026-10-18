@@ -53,6 +53,9 @@ extends Node3D
 ##   Money at 0        the day ends at once and the walkout plays instead of
 ##                     the next morning (day_cycle.gd _play_walkout,
 ##                     walkout.gd); test_walkout plays it straight away
+##   Bureaucracy at 0  the same, but the Contractor's town plays instead
+##                     (day_cycle.gd _play_contractor, contractor_town.gd);
+##                     test_contractor plays it straight away
 ##   show_stat_hints() light a crystal over each gauge a choice would change
 ##
 ## Real proposals live in PresidentRoom/proposals/*.tres (proposal_data.gd).
@@ -165,6 +168,11 @@ enum Stat { AWARENESS, MONEY, INFRASTRUCTURE, BUREAUCRACY }
 ## approved, e.g. "health_hospital", "agency_fire_station", "interior_police"
 ## to see those three shut. Turn off for the real game.
 @export var test_walkout := false
+## Testing: skip the desk and play the Contractor's town (what happens when
+## Bureaucracy hits 0) as soon as the scene starts, with the proposals in
+## test_approved approved (civic lots left empty get fenced too). Turn off
+## for the real game.
+@export var test_contractor := false
 ## Proposal ids treated as approved by test_ending, e.g.
 ## "urban_timber_bracing" (Old Quarter braced), "interior_inspectors",
 ## "seismologist_drill", "agency_rescue_training", "agency_fire_station",
@@ -360,6 +368,9 @@ func _rebuild() -> void:
 	day_cycle = dc
 	if test_walkout:
 		dc.start_walkout_now.call_deferred(test_approved)
+		return
+	if test_contractor:
+		dc.start_contractor_now.call_deferred(test_approved)
 		return
 	if test_ending:
 		dc.start_ending_now.call_deferred(test_approved)

@@ -72,7 +72,7 @@ const CRACKED_DEATH := 0.07
 ## Share of the untreated deaths avoided by a fully aware population.
 const FIRST_AID_SAVES := 0.3
 ## Share of the people inside who die when it comes down.
-const INSIDE_DEATH := 0.85
+const INSIDE_DEATH := 0.95
 ## What the hospital is worth, and the share lost: shaken, cracked, gone.
 const HOSPITAL_VALUE := 120.0e6
 const SOUND_LOSS := 0.03
@@ -91,6 +91,16 @@ const PERSON := 1.1
 const BLANKETS := [Color(0.85, 0.68, 0.22), Color(0.55, 0.58, 0.62), Color(0.62, 0.22, 0.2),
 	Color(0.3, 0.4, 0.6)]
 const MIX_RATE := 22050.0
+## The rest of the city on screen shakes with it (it's the same ground): every
+## building and street prop within this many tiles of the hospital.
+const NEIGHBOUR_TILES := 22.0
+## How hard the neighbours shake (BuildingQuake's `_shake` scale: an undamaged
+## building at the main shock is about 0.9), near the hospital and at the edge.
+const NEIGHBOUR_SHAKE_NEAR := 1.0
+const NEIGHBOUR_SHAKE_FAR := 0.6
+## Longest the wave takes to reach the furthest neighbour (seconds).
+const NEIGHBOUR_MAX_DELAY := 1.1
+const DISTRICTS := "Districts"
 
 var mode := Mode.NONE
 var built := false
@@ -112,6 +122,11 @@ var _scene: Node3D            # the later scene, in hospital-local units
 var _vans: Array[Dictionary] = []
 var _parked := 0
 var _mats := {}
+var _city: Node3D
+## The buildings and props round the hospital that shake with it:
+## [{node, orig (global), size, tall, prop, delay, power, seed}].
+var _neighbours: Array[Dictionary] = []
+var _neighbours_live := false
 
 # sound: the ambulances' two-tone siren
 var _player: AudioStreamPlayer
@@ -125,6 +140,7 @@ var _siren_phase := 0.0
 ## Find the hospital and work out the toll from the choices. `ending` is the
 ## earthquake_ending.gd (with the other places' results already in it).
 func prepare(city: Node3D, ending) -> bool:
+	_city = city
 	_hosp = city.get_node_or_null(HOSPITAL) as Node3D
 	if _hosp == null:
 		return false
@@ -173,7 +189,7 @@ func prepare(city: Node3D, ending) -> bool:
 			injured_dead = roundi(injured * CRACKED_DEATH)
 			damage = HOSPITAL_VALUE * CRACKED_LOSS
 		Mode.COLLAPSES:
-			inside_dead = roundi(inside * INSIDE_DEATH * _rng.randf_range(0.95, 1.05))
+			inside_dead = roundi(inside * INSIDE_DEATH)   # exactly 95% (600 inside -> 570 dead)
 			injured_dead = alone_dead   # nowhere left to take them
 			damage = HOSPITAL_VALUE
 	dead = inside_dead + injured_dead
@@ -318,6 +334,7 @@ func _shot(eye: Vector3, look: Vector3, creep: Vector3) -> Array:
 ## wider when the jolt hits, and if it's going to fall they split open first.
 func quake() -> void:
 	_hide_lot_sign()
+	_shake_neighbours()
 	if _plan.is_empty():
 		_fx = Node3D.new()
 		_fx.name = "QuakeFX"
@@ -403,6 +420,8 @@ func _hide_lot_sign() -> void:
 
 func _process(delta: float) -> void:
 	_t += delta
+	if _neighbours_live:
+		_update_neighbours()
 	for v in _vans:
 		var k := 0
 		for l in v.lights:
@@ -412,11 +431,116 @@ func _process(delta: float) -> void:
 	_feed_sound()
 
 
+# ================================================================ the neighbours
+
+## The ground moves under the whole Civic Center, not just the hospital: every
+## building and street prop around it (the police and fire stations, the
+## palace, the high-rises across the road, streetlights...) shakes with the
+## same ground motion, the wave reaching the far ones a moment later. They only
+## shake (nothing breaks, nothing changes in the toll) and are put back exactly
+## where they were once it's over.
+func _shake_neighbours() -> void:
+	_neighbours.clear()
+	var districts := _city.get_node_or_null(DISTRICTS) if _city else null
+	if districts == null:
+		return
+	_noise.seed = GROUND_SEED
+	var here := _flat(_hosp.global_position)
+	var reach := NEIGHBOUR_TILES * tile
+	for d in districts.get_children():
+		for group in ["Buildings", "Props"]:
+			var root := d.get_node_or_null(group)
+			if root == null:
+				continue
+			for c in root.get_children():
+				var n := c as Node3D
+				if n == null or n == _hosp or not n.is_visible_in_tree():
+					continue
+				# a civic lot (buildable.gd): only the building that's gone up
+				# on it shakes, not the flat lot, and nothing if it was never built
+				if n.has_method("is_built"):
+					if not n.is_built():
+						continue
+					var rise := n.get_node_or_null("Rise") as Node3D
+					if rise:
+						n = rise
+				var dist := _flat(n.global_position).distance_to(here)
+				if dist > reach:
+					continue
+				var box := _box_of(n)
+				if box.size == Vector3.ZERO:
+					continue
+				var k := clampf(dist / reach, 0.0, 1.0)
+				var size := maxf(box.size.x, box.size.z)
+				_neighbours.append({
+					"node": n, "orig": n.global_transform, "size": size,
+					"tall": clampf(box.size.y / maxf(size, 0.01), 0.5, 3.0),
+					"prop": group == "Props",
+					"delay": 0.3 + k * NEIGHBOUR_MAX_DELAY + _rng.randf_range(0.0, 0.15),
+					"power": lerpf(NEIGHBOUR_SHAKE_NEAR, NEIGHBOUR_SHAKE_FAR, k),
+					"seed": _rng.randf() * 100.0,
+				})
+	_neighbours_live = not _neighbours.is_empty()
+
+
+## One frame of the neighbours' shaking (the same motion BuildingQuake gives
+## the hospital: a jitter along the ground and a sway that grows with height).
+func _update_neighbours() -> void:
+	var any := false
+	for s in _neighbours:
+		var n: Node3D = s.node
+		if not is_instance_valid(n):
+			continue
+		var orig: Transform3D = s.orig
+		var lt: float = _t - float(s.delay)
+		var dur: float = SHAKE_TIME - float(s.delay)
+		if lt < 0.0:
+			any = true
+			continue
+		if lt >= dur:
+			n.global_transform = orig
+			continue
+		any = true
+		# in, a jolt with the main shock, then dying away
+		var env := clampf(lt / 0.8, 0.0, 1.0) * (1.0 - clampf((lt - dur * 0.6) / (dur * 0.4), 0.0, 1.0))
+		env *= 1.0 + 0.5 * exp(-pow((lt - 1.5) / 0.5, 2.0))
+		var sh: float = env * float(s.power)
+		var sd: float = float(s.seed) * 0.02
+		var off: Vector3
+		var rot: float
+		if s.prop:
+			off = Vector3(_noise.get_noise_2d(lt * 10.0, sd + 80.0), 0.0, _noise.get_noise_2d(sd + 80.0, lt * 10.0)) \
+				* 0.03 * tile * sh
+			rot = deg_to_rad(5.0) * sh
+		else:
+			off = Vector3(_noise.get_noise_2d(lt * 9.0, sd), _noise.get_noise_2d(lt * 9.0, sd + 40.0) * 0.25,
+				_noise.get_noise_2d(sd, lt * 9.0)) * 0.035 * float(s.size) * sh
+			rot = deg_to_rad(1.6) * float(s.tall) * sh
+		var sway := Basis.from_euler(Vector3(_noise.get_noise_2d(lt * 4.0, sd + 90.0) * rot, 0.0,
+			_noise.get_noise_2d(lt * 4.0, sd + 130.0) * rot))
+		n.global_transform = Transform3D(sway * orig.basis, orig.origin + off)
+	if not any:
+		_neighbours_live = false
+
+
+## Everything back where it stood (the shaking's over, or we cut away).
+func _settle_neighbours() -> void:
+	for s in _neighbours:
+		if is_instance_valid(s.node):
+			(s.node as Node3D).global_transform = s.orig
+	_neighbours_live = false
+
+
+func _exit_tree() -> void:
+	_settle_neighbours()
+
+
 # ================================================================ later
 
 ## Half an hour on: lay out what's there now.
 func skip_ahead() -> void:
 	_hide_lot_sign()
+	_settle_neighbours()
 	_scene = Node3D.new()
 	_scene.name = "Later"
 	_scene.top_level = true

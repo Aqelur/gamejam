@@ -1,15 +1,15 @@
 extends Node3D
 ## The last thing the ending shows (earthquake_ending.gd, after the summary):
-## everyone who died, laid out in rows on the grass of Central Park, each under
-## a black blanket. The camera starts on one of them and pulls back, 4, 9, 16...
+## everyone who died, laid out in rows in Central Park, each under a black
+## blanket. The camera starts on one of them and pulls back, 4, 9, 16...
 ## until all of them lie there.
 ##
-## Everything is in the park's own units (one unit = one city tile), like
-## central_park_drill.gd and park_tents.gd. The rows start on the west lawn and
-## grow outward in squares, around the trees, benches, lamps, the pond, the
-## fountain and the bandstand (the paths are fine). If there are more dead than
-## fit, the rows close up and the bodies get smaller until they all do.
-## The bodies are one MultiMesh, so thousands cost almost nothing.
+## The park is cleared for this: the trees and everything else in the city are
+## hidden, and the bodies lie on a plain green field. They lie vertically on
+## screen (head away from the camera, feet towards it), side by side in rows.
+## If there are more dead than fit, the rows close up and the bodies get
+## smaller until they all do. The bodies are one MultiMesh, so thousands cost
+## almost nothing.
 ##
 ##   setup(city, total) -> false if there's no Central Park
 ##   settle(from, to, k)  bodies from..to (0-based, `to` excluded) are laid down,
@@ -17,23 +17,22 @@ extends Node3D
 ##   frame(n) -> [eye, look]   world-space camera for the first n bodies
 
 const PARK := "Districts/EvacuationPark/CentralPark"
-## Where bodies may go: the main park, and the lawn round the fountain.
-const AREAS: Array[Rect2] = [Rect2(-2.7, -13.6, 26.4, 8.95), Rect2(4.25, -4.6, 5.5, 7.55)]
-## The first body, on the west lawn; the rows grow outward from here.
+## The first body; the rows grow outward from here.
 const START := Vector2(5.0, -8.6)
-## One body's spot: along it (head west), across it.
-const CELL := Vector2(0.27, 0.13)
+## Where bodies may go (park units): a big open square round START.
+const AREA := Rect2(-13.0, -26.6, 36.0, 36.0)
+## One body's spot: across it (x), along it (z, head to -z).
+const CELL := Vector2(0.13, 0.27)
 const LAWN_Y := 0.07
-const PAVING_Y := 0.085
-const PLAZA := Vector2(7.0, 0.0)
-const PLAZA_R := 1.62
-const BASIN_R := 0.95
 const BLANKET := Color(0.035, 0.035, 0.042)
+const GRASS := Color(0.33, 0.55, 0.24)
+## How far the plain green field reaches, park units.
+const FIELD_SIZE := 600.0
 ## Body size in park units, before any shrinking.
 const LENGTH := 0.2
 const WIDTH := 0.092
 
-## How many bodies are laid out (the total, unless the park is too small).
+## How many bodies are laid out (the total, unless the area is too small).
 var count := 0
 
 var _park: Node3D
@@ -47,10 +46,6 @@ var _spots: Array[Vector3] = []
 var _base: Array[Transform3D] = []
 ## Bounds of the first i+1 bodies.
 var _bounds: Array[Rect2] = []
-var _circles: Array[Vector3] = []     # x, z, radius
-var _ellipses: Array[Vector4] = []    # x, z, radius x, radius z
-var _hedges: Array[Dictionary] = []   # {"o", "ax", "half"}
-var _paths: Array[Dictionary] = []
 
 
 func _init() -> void:
@@ -66,7 +61,8 @@ func setup(city: Node3D, total: int) -> bool:
 	_rig.name = "Rig"
 	add_child(_rig)
 	_rig.global_transform = _park.global_transform
-	_collect_obstacles()
+	_clear_city(city)
+	_add_field()
 	# close the rows up until everyone fits
 	for attempt in 8:
 		_lay_out()
@@ -78,11 +74,12 @@ func setup(city: Node3D, total: int) -> bool:
 	count = mini(total, _spots.size())
 	_spots.resize(count)
 
+	# lying vertically: the body's length runs along z
+	var half := Vector2(WIDTH, LENGTH) * 0.5 * _size
 	_bounds.resize(count)
 	var r := Rect2()
 	for i in count:
 		var s := _spots[i]
-		var half := Vector2(LENGTH, WIDTH) * 0.5 * _size
 		var b := Rect2(Vector2(s.x, s.z) - half, half * 2.0)
 		r = b if i == 0 else r.merge(b)
 		_bounds[i] = r
@@ -91,7 +88,8 @@ func setup(city: Node3D, total: int) -> bool:
 	for i in count:
 		var s := _spots[i]
 		var grown := _size * (_rng.randf_range(0.66, 0.74) if _rng.randf() < 0.07 else _rng.randf_range(0.93, 1.05))
-		var basis := Basis(Vector3.UP, _rng.randf_range(-0.05, 0.05)).scaled(Vector3.ONE * grown)
+		# turned 90 degrees: the mesh's head (-x) points to -z, away from the camera
+		var basis := Basis(Vector3.UP, -PI * 0.5 + _rng.randf_range(-0.05, 0.05)).scaled(Vector3.ONE * grown)
 		_base[i] = Transform3D(basis, Vector3(s.x, s.y + 0.0015, s.z))
 
 	_mm = MultiMesh.new()
@@ -142,35 +140,52 @@ func frame(n: float, aspect := 16.0 / 9.0, fov_deg := 48.0) -> Array:
 	return [_rig.to_global(look + dir * dist), _rig.to_global(look)]
 
 
+# ================================================================ the field
+
+## Hide the whole city (trees, buildings, paths, people...) so nothing but the
+## green field and the bodies is seen. Lights and the sky are left alone. The
+## scene reloads after the ending, so nothing needs putting back.
+func _clear_city(city: Node3D) -> void:
+	for g in city.find_children("*", "GeometryInstance3D", true, false):
+		if is_ancestor_of(g):
+			continue
+		(g as GeometryInstance3D).visible = false
+
+
+## One big flat plane of plain green grass under everything.
+func _add_field() -> void:
+	var plane := PlaneMesh.new()
+	plane.size = Vector2(FIELD_SIZE, FIELD_SIZE)
+	var m := StandardMaterial3D.new()
+	m.albedo_color = GRASS
+	m.roughness = 1.0
+	m.metallic_specular = 0.0
+	plane.material = m
+	var mi := MeshInstance3D.new()
+	mi.name = "GreenField"
+	mi.mesh = plane
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.position = Vector3(START.x, LAWN_Y, START.y)
+	_rig.add_child(mi)
+
+
 # ================================================================ layout
 
-## Every free spot on a grid through START, nearest first (in squares).
+## Every spot on a grid through START, nearest first (in squares).
 func _lay_out() -> void:
 	_spots.clear()
 	var found: Array[Vector4] = []   # x, y, z, sort key
-	var lo := Vector2(INF, INF)
-	var hi := Vector2(-INF, -INF)
-	for area in AREAS:
-		lo = lo.min(area.position)
-		hi = hi.max(area.end)
-	var i0 := floori((lo.x - START.x) / _cell.x)
-	var i1 := ceili((hi.x - START.x) / _cell.x)
-	var j0 := floori((lo.y - START.y) / _cell.y)
-	var j1 := ceili((hi.y - START.y) / _cell.y)
-	var reach := LENGTH * 0.42 * _size
-	var r := WIDTH * 0.4 * _size
+	var i0 := floori((AREA.position.x - START.x) / _cell.x)
+	var i1 := ceili((AREA.end.x - START.x) / _cell.x)
+	var j0 := floori((AREA.position.y - START.y) / _cell.y)
+	var j1 := ceili((AREA.end.y - START.y) / _cell.y)
 	for j in range(j0, j1 + 1):
 		for i in range(i0, i1 + 1):
 			var p := START + Vector2(i * _cell.x, j * _cell.y)
-			if not _inside(p, reach):
-				continue
-			if not (_clear(p, r) and _clear(p + Vector2(reach, 0), r) and _clear(p - Vector2(reach, 0), r)):
-				continue
-			var y := PAVING_Y if _on_paving(p) else LAWN_Y
 			var d := p - START
 			# square rings in the world (a little wider than deep, for the
 			# screen), then row by row inside a ring
-			found.append(Vector4(p.x, y, p.y, maxf(absf(d.x), absf(d.y) * 1.25)))
+			found.append(Vector4(p.x, LAWN_Y, p.y, maxf(absf(d.x), absf(d.y) * 1.25)))
 	found.sort_custom(func(a: Vector4, b: Vector4) -> bool:
 		if absf(a.w - b.w) > 0.00001:
 			return a.w < b.w
@@ -179,131 +194,6 @@ func _lay_out() -> void:
 		return a.x < b.x)
 	for f in found:
 		_spots.append(Vector3(f.x, f.y, f.z))
-
-
-func _inside(p: Vector2, reach: float) -> bool:
-	for area in AREAS:
-		if area.grow_individual(-reach, -0.06, -reach, -0.06).has_point(p):
-			return true
-	return false
-
-
-func _on_paving(p: Vector2) -> bool:
-	if p.distance_to(PLAZA) < PLAZA_R:
-		return true
-	for b in _paths:
-		if _in_box(p, b, 0.0):
-			return true
-	return false
-
-
-# ================================================================ what's in the way
-
-func _collect_obstacles() -> void:
-	# trees: just round the trunk (the branches are overhead)
-	var trees := _park.get_node_or_null("Trees")
-	if trees:
-		for c in trees.get_children():
-			var n := c as Node3D
-			if n == null:
-				continue
-			var p := _rig.to_local(n.global_position)
-			var bb := _local_bounds(n)
-			var r := 0.06 if bb.size == Vector3.ZERO else clampf(maxf(bb.size.x, bb.size.z) * 0.18, 0.045, 0.11)
-			_circles.append(Vector3(p.x, p.z, r))
-	# benches, lamps, planters, signs, the shelter camp: as wide as they are
-	for group_name in ["Benches", "Lamps", "FountainPlaza", "ShelterCamp"]:
-		var g := _park.get_node_or_null(group_name)
-		if g == null:
-			continue
-		for c in g.get_children():
-			if c is MeshInstance3D or not c is Node3D:
-				continue
-			var bb := _local_bounds(c as Node3D)
-			if bb.size == Vector3.ZERO:
-				continue
-			var mid := bb.get_center()
-			_circles.append(Vector3(mid.x, mid.z, maxf(bb.size.x, bb.size.z) * 0.5))
-	_circles.append(Vector3(PLAZA.x, PLAZA.y, BASIN_R))
-	# the pond, the bandstand and the flower beds: discs
-	for group_name in ["Pond", "Bandstand", "FlowerBeds"]:
-		var g := _park.get_node_or_null(group_name)
-		if g == null:
-			continue
-		for mi in g.find_children("*", "MeshInstance3D", true, false):
-			var cm := (mi as MeshInstance3D).mesh as CylinderMesh
-			if cm == null:
-				continue
-			var xf := _rig.global_transform.affine_inverse() * (mi as Node3D).global_transform
-			var rad := maxf(cm.top_radius, cm.bottom_radius)
-			_ellipses.append(Vector4(xf.origin.x, xf.origin.z, rad * xf.basis.x.length(), rad * xf.basis.z.length()))
-		# anything else in them (the bandstand's posts and roof)
-		var bb := _local_bounds(g as Node3D)
-		if group_name == "Bandstand" and bb.size != Vector3.ZERO:
-			var mid := bb.get_center()
-			_circles.append(Vector3(mid.x, mid.z, maxf(bb.size.x, bb.size.z) * 0.5))
-	for group_name in ["Hedges", "Paths"]:
-		var g := _park.get_node_or_null(group_name)
-		if g == null:
-			continue
-		for c in g.get_children():
-			var b := _box_of(c)
-			if b.is_empty():
-				continue
-			if group_name == "Hedges":
-				_hedges.append(b)
-			else:
-				_paths.append(b)
-
-
-func _clear(p: Vector2, r: float) -> bool:
-	for c in _circles:
-		if Vector2(c.x, c.y).distance_to(p) < c.z + r:
-			return false
-	for e in _ellipses:
-		var dx := (p.x - e.x) / (e.z + r)
-		var dz := (p.y - e.y) / (e.w + r)
-		if dx * dx + dz * dz < 1.0:
-			return false
-	for b in _hedges:
-		if _in_box(p, b, r):
-			return false
-	return true
-
-
-func _in_box(p: Vector2, b: Dictionary, r: float) -> bool:
-	var d: Vector2 = p - b.o
-	var ax: Vector2 = b.ax
-	return absf(d.dot(ax)) < b.half.x + r and absf(d.dot(Vector2(-ax.y, ax.x))) < b.half.y + r
-
-
-## A flat box mesh as {"o": centre, "ax": along its length, "half": (half
-## length, half width)}, x/z in park units. Empty if it isn't one.
-func _box_of(n: Node) -> Dictionary:
-	var mi := n as MeshInstance3D
-	if mi == null or not mi.mesh is BoxMesh:
-		return {}
-	var size := (mi.mesh as BoxMesh).size
-	var xf := _rig.global_transform.affine_inverse() * mi.global_transform
-	var along := Vector2(xf.basis.z.x, xf.basis.z.z)
-	var side := Vector2(xf.basis.x.x, xf.basis.x.z)
-	return {"o": Vector2(xf.origin.x, xf.origin.z), "ax": along.normalized(),
-		"half": Vector2(size.z * 0.5 * along.length(), size.x * 0.5 * side.length())}
-
-
-func _local_bounds(n: Node3D) -> AABB:
-	var inv := _rig.global_transform.affine_inverse()
-	var bb := AABB()
-	var first := true
-	var parts: Array = n.find_children("*", "VisualInstance3D", true, false)
-	if n is VisualInstance3D:
-		parts.append(n)
-	for v in parts:
-		var vi := v as VisualInstance3D
-		var b: AABB = inv * vi.global_transform * vi.get_aabb()
-		bb = b if first else bb.merge(b)
-		first = false
-	return bb
 
 
 # ================================================================ the blanket

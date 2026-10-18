@@ -126,6 +126,18 @@ const FIRE_SFX_DB := 0.0
 const FLAME_FRAMES := 4
 const FLAME_FRAME_W := 48
 const FLAME_FRAME_H := 96
+## The fire shows through a few windows that shatter one after another (lowest
+## first, so it climbs the building), not over the whole building.
+const WINDOWS_MIN := 3
+const WINDOWS_MAX := 6
+## Seconds between one window going and the next (a little random).
+const WINDOW_GAP := 2.6
+## Size of a window opening and height of one floor, in tiles.
+const WINDOW_W := 0.13
+const WINDOW_H := 0.17
+const FLOOR_H := 0.22
+## Share of the windows on the street side (the side the camera sees).
+const STREET_SHARE := 0.7
 
 var tile := 26.926893
 var ground_y := -0.7273283
@@ -160,6 +172,8 @@ var _crews_done := false
 var _flame_mesh: QuadMesh
 var _spark_mesh: QuadMesh
 var _water_mesh: QuadMesh
+var _glass_mesh: BoxMesh
+static var _hole_tex_cache: GradientTexture2D
 static var _flame_tex_cache: ImageTexture
 static var _spark_tex_cache: ImageTexture
 
@@ -372,6 +386,10 @@ func start() -> void:
 	_fx.top_level = true
 	add_child(_fx)
 	_fx.global_transform = Transform3D()
+	# the street the broken glass lands on
+	var ground := QuakeFX.particle_floor(_fx, _centre, ground_y, 24.0 * tile)
+	ground.size = Vector3(24.0 * tile, 0.5 * tile, 24.0 * tile)
+	ground.global_position = Vector3(_centre.x, ground_y - 0.25 * tile, _centre.z)
 	_start_sound()
 	for i in _row.size():
 		_shake(_row[i].b, BuildingQuake.Outcome.DAMAGED if i == 0 else BuildingQuake.Outcome.UNDAMAGED)
@@ -425,6 +443,11 @@ func skip_ahead() -> void:
 	for i in mini(CAUGHT, _row.size()):
 		if not _row[i].lit:
 			_ignite(i, 1.0)
+		# by now every window the fire was going to take has gone
+		for w in _row[i].windows:
+			if not w.broken:
+				_break_window(_row[i], w, false)
+		_update_crackle(_row[i])
 		_row[i].target = 1.0
 		_row[i].heat = maxf(_row[i].heat, 0.85)
 		_row[i].char = maxf(_row[i].char, 0.35)
@@ -497,8 +520,10 @@ func _ignite(i: int, heat: float) -> void:
 	e.heat = heat * 0.5
 	var box: AABB = e.box
 	var c := box.get_center()
-	# flames from the windows on every side and over the roof
-	e.flames = _flames(box)
+	# a few windows that will shatter one by one, flames pouring out of each,
+	# and the fire breaking through the roof
+	e.age = 0.0         # seconds since it caught
+	e.windows = _pick_windows(box)
 	e.roof = _roof_flames(box)
 	e.core = _core_flames(box)
 	e.sparks = _sparks(box)
@@ -509,18 +534,21 @@ func _ignite(i: int, heat: float) -> void:
 	e.steam = _smoke(Vector3(c.x, box.end.y - box.size.y * 0.2, c.z), Vector3(box.size.x * 0.5, box.size.y * 0.25, box.size.z * 0.5),
 		STEAM, 70, 4.0, 0.8, 0.7)
 	(e.steam as GPUParticles3D).amount_ratio = 0.0
+	# a soft glow on the street (each burning window adds its own small light)
 	var light := OmniLight3D.new()
 	light.light_color = Color(1.0, 0.5, 0.18)
-	light.omni_range = maxf(box.size.x, box.size.z) * 0.5 + 2.6 * tile
-	light.omni_attenuation = 1.4
+	light.omni_range = maxf(box.size.x, box.size.z) * 0.5 + 2.0 * tile
+	light.omni_attenuation = 1.6
 	light.light_energy = 0.0
 	light.shadow_enabled = false
 	_fx.add_child(light)
-	light.global_position = _face_point(box, _park_out, 0.55) + _park_out * 0.6 * tile
+	light.global_position = _face_point(box, _park_out, 0.55) + _park_out * 1.2 * tile
 	e.light = light
 	e.mat = _char_material(e.b)
-	# a burst of glass and flame as it catches
-	_fireball(_face_point(box, _park_out, 0.6) + _park_out * 0.05 * tile, 0.6)
+	# the first window blows out as it catches
+	if not (e.windows as Array).is_empty():
+		_break_window(e, e.windows[0], true)
+		_update_crackle(e)
 
 
 func _process(delta: float) -> void:
@@ -543,7 +571,26 @@ func _process(delta: float) -> void:
 			e.out = true
 		total += e.heat
 		var flick := 0.75 + 0.25 * _noise.get_noise_2d(_t * 9.0, i * 31.0) + 0.15 * _noise.get_noise_2d(_t * 23.0, i * 7.0)
-		(e.flames as GPUParticles3D).amount_ratio = clampf(e.heat, 0.0, 1.0)
+		# the next window gives way as the fire climbs (not once the water is on it)
+		e.age += delta
+		var broke := false
+		for w in e.windows:
+			if not w.broken and e.age >= w.at and e.heat > 0.15 and e.douse <= 0.0:
+				_break_window(e, w, true)
+				broke = true
+		if broke:
+			_update_crackle(e)
+		var k := 0
+		for w in e.windows:
+			k += 1
+			if not w.broken:
+				continue
+			var wf := clampf(flick + 0.2 * _noise.get_noise_2d(_t * 13.0, i * 17.0 + k * 5.0), 0.5, 1.2)
+			(w.flames as GPUParticles3D).amount_ratio = clampf(e.heat * 1.15, 0.0, 1.0)
+			(w.core as GPUParticles3D).amount_ratio = clampf(e.heat * 1.3 - 0.2, 0.0, 1.0) * clampf(wf, 0.6, 1.0)
+			(w.smoke as GPUParticles3D).amount_ratio = clampf(maxf(e.heat, e.char * 0.4), 0.0, 1.0)
+			(w.light as OmniLight3D).light_energy = 3.0 * e.heat * wf
+			(w.glow as StandardMaterial3D).emission_energy_multiplier = 4.0 * e.heat * wf
 		(e.roof as GPUParticles3D).amount_ratio = clampf(e.heat * 1.2 - 0.2, 0.0, 1.0)
 		(e.core as GPUParticles3D).amount_ratio = clampf(e.heat * 1.3 - 0.3, 0.0, 1.0) * clampf(flick, 0.6, 1.0)
 		(e.sparks as GPUParticles3D).amount_ratio = clampf(e.heat * (0.55 + 0.45 * flick), 0.0, 1.0)
@@ -555,10 +602,10 @@ func _process(delta: float) -> void:
 		# smoke keeps going thinly after the flames die; steam while water hits
 		(e.smoke as GPUParticles3D).amount_ratio = clampf(maxf(e.heat, e.char * 0.45), 0.0, 1.0)
 		(e.steam as GPUParticles3D).amount_ratio = clampf(e.douse * (0.3 + e.heat), 0.0, 1.0)
-		(e.light as OmniLight3D).light_energy = 7.0 * e.heat * flick
+		(e.light as OmniLight3D).light_energy = 2.5 * e.heat * flick
+		# the walls only scorch a little; the fire shows through the windows
 		var m: StandardMaterial3D = e.mat
-		m.albedo_color.a = clampf(e.char + e.heat * 0.2, 0.0, 0.92)
-		m.emission_energy_multiplier = 2.2 * e.heat * flick
+		m.albedo_color.a = clampf(e.char * 0.5, 0.0, 0.4)
 
 	# left alone, the fire takes the next building down the row
 	if _spreading and _t >= _next_spread:
@@ -814,40 +861,244 @@ func _shut_off() -> void:
 
 # ================================================================ particles
 
-## Points scattered over the windows on every side of `box` (relative to its centre).
-func _window_points(box: AABB, per_face: int, low := 0.18, high := 0.95) -> PackedVector3Array:
-	var c := box.get_center()
-	var pts := PackedVector3Array()
-	for f in _faces(box):
+# ---------------------------------------------------------------- windows
+
+## The windows the fire will break, on a floor/column grid so they line up like
+## real windows. Mostly on the street side, sometimes round the corner. The
+## first is low on the street side (nearest the gas); the rest go in order of
+## height, so the fire is seen climbing the building.
+## Each: {pos, n, at (seconds after catching), broken}.
+func _pick_windows(box: AABB) -> Array:
+	var faces := _faces(box)
+	var street := _best_face(box)
+	var sn: Vector3 = faces[street][1]
+	var sides: Array[int] = []
+	for i in faces.size():
+		if absf((faces[i][1] as Vector3).dot(sn)) < 0.1:
+			sides.append(i)
+	var floors := maxi(2, roundi(box.size.y / (FLOOR_H * tile)))
+	var want := _rng.randi_range(WINDOWS_MIN, WINDOWS_MAX)
+	var picked: Array = []
+	var used := {}
+	var tries := 0
+	while picked.size() < want and tries < 80:
+		tries += 1
+		var fi := street
+		if picked.size() > 0 and not sides.is_empty() and _rng.randf() > STREET_SHARE:
+			fi = sides[_rng.randi() % sides.size()]
+		var f: Array = faces[fi]
 		var n: Vector3 = f[1]
 		var side := Vector3(n.z, 0, -n.x)
-		for k in per_face:
-			var p: Vector3 = f[0] + side * _rng.randf_range(-0.85, 0.85) * f[2]
-			p.y = box.position.y + box.size.y * _rng.randf_range(low, high)
-			pts.append(p + n * 0.05 * tile - c)
-	return pts
+		var half_w: float = f[2]
+		var cols := maxi(2, roundi(half_w * 2.0 / (0.3 * tile)))
+		var col := _rng.randi_range(0, cols - 1)
+		# the first one low down, where the gas went up
+		var fl := _rng.randi_range(0, mini(1, floors - 1)) if picked.is_empty() else _rng.randi_range(0, floors - 1)
+		var key := "%d:%d:%d" % [fi, col, fl]
+		if used.has(key):
+			continue
+		used[key] = true
+		var across := ((float(col) + 0.5) / float(cols) * 2.0 - 1.0) * half_w * 0.8
+		var p: Vector3 = f[0] + side * across
+		p.y = box.position.y + box.size.y * (float(fl) + 0.55) / float(floors)
+		picked.append({"pos": p + n * 0.015 * tile, "n": n, "y": p.y, "broken": false, "at": 0.0})
+	if picked.is_empty():
+		return picked
+	var first: Dictionary = picked.pop_front()
+	picked.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.y < b.y)
+	picked.push_front(first)
+	var at := 0.0
+	for w in picked:
+		w.at = at
+		at += WINDOW_GAP * _rng.randf_range(0.6, 1.4)
+	return picked
 
 
-## Flames licking out of the windows on every side of the building.
-func _flames(box: AABB) -> GPUParticles3D:
-	var c := box.get_center()
-	var pts := _window_points(box, 26)
+## A window gives way: the glass blows out (`burst`), and from then on the
+## opening glows and flames pour out of it and curl up the wall.
+func _break_window(e: Dictionary, w: Dictionary, burst: bool) -> void:
+	if w.broken:
+		return
+	w.broken = true
+	var pos: Vector3 = w.pos
+	var n: Vector3 = w.n
+	var face := QuakeFX.facing(n)   # +Z out of the wall, +Y up
+	# the opening: burnt black, lit from inside by the fire
+	var hole := MeshInstance3D.new()
+	var q := QuadMesh.new()
+	q.size = Vector2(WINDOW_W, WINDOW_H) * tile
+	var gm := StandardMaterial3D.new()
+	gm.albedo_color = Color(0.03, 0.02, 0.018)
+	gm.roughness = 1.0
+	gm.emission_enabled = true
+	gm.emission = Color(1.0, 0.5, 0.14)
+	gm.emission_texture = _hole_texture()
+	gm.emission_energy_multiplier = 0.0
+	q.material = gm
+	hole.mesh = q
+	hole.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_fx.add_child(hole)
+	hole.global_transform = Transform3D(face, pos + n * 0.004 * tile)
+	w.glow = gm
+	# flames out of the window, bending up the wall above it
 	var pm := ParticleProcessMaterial.new()
-	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_POINTS
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	pm.emission_box_extents = Vector3(WINDOW_W * 0.38, WINDOW_H * 0.3, 0.01) * tile
+	pm.direction = Vector3(0, 0.45, 1)
+	pm.spread = 18.0
+	pm.initial_velocity_min = 0.25 * tile
+	pm.initial_velocity_max = 0.55 * tile
+	pm.gravity = Vector3(0, 0.95, 0) * tile
+	pm.damping_min = 0.25 * tile
+	pm.damping_max = 0.45 * tile
+	_flame_look(pm, 0.16, 0.34)
+	var fl := QuakeFX.emitter(_fx, Transform3D(face, pos + n * 0.02 * tile + Vector3.DOWN * WINDOW_H * 0.15 * tile),
+		_flame_quad(), _q(80), 0.85, pm, false, 0.0)
+	fl.amount_ratio = 0.0
+	fl.visibility_aabb = AABB(Vector3(-2, -1, -2) * tile, Vector3(4, 4, 4) * tile)
+	w.flames = fl
+	# the white-yellow heart of it, right in the opening
+	var cm := ParticleProcessMaterial.new()
+	cm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	cm.emission_box_extents = Vector3(WINDOW_W * 0.3, WINDOW_H * 0.2, 0.01) * tile
+	cm.direction = Vector3(0, 0.3, 1)
+	cm.spread = 12.0
+	cm.initial_velocity_min = 0.12 * tile
+	cm.initial_velocity_max = 0.3 * tile
+	cm.gravity = Vector3(0, 0.6, 0) * tile
+	cm.damping_min = 0.3 * tile
+	cm.damping_max = 0.5 * tile
+	_flame_look(cm, 0.08, 0.15, true)
+	var core := QuakeFX.emitter(_fx, Transform3D(face, pos + n * 0.02 * tile + Vector3.DOWN * WINDOW_H * 0.2 * tile),
+		_flame_quad(), _q(36), 0.5, cm, false, 0.0)
+	core.amount_ratio = 0.0
+	core.visibility_aabb = AABB(Vector3(-2, -1, -2) * tile, Vector3(4, 4, 4) * tile)
+	w.core = core
+	# black smoke rolling out of the top of the window
+	w.smoke = _smoke(pos + n * 0.08 * tile + Vector3.UP * WINDOW_H * 0.6 * tile, Vector3(WINDOW_W * 0.3, 0.02, 0.05) * tile,
+		SMOKE, _q(28), 4.5, 0.35, 0.6)
+	# its own small light, so the wall around it glows (and nothing else)
+	var l := OmniLight3D.new()
+	l.light_color = Color(1.0, 0.52, 0.2)
+	l.omni_range = 0.9 * tile
+	l.omni_attenuation = 1.3
+	l.light_energy = 0.0
+	l.shadow_enabled = false
+	_fx.add_child(l)
+	l.global_position = pos + n * 0.3 * tile
+	w.light = l
+	if burst:
+		_shatter(pos, n)
+
+
+## Glass blown out of a window, a puff of flame behind it and a flash.
+func _shatter(pos: Vector3, n: Vector3) -> void:
+	var face := QuakeFX.facing(n)
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	pm.emission_box_extents = Vector3(WINDOW_W * 0.45, WINDOW_H * 0.45, 0.01) * tile
+	pm.direction = Vector3(0, 0.3, 1)
+	pm.spread = 40.0
+	pm.initial_velocity_min = 0.5 * tile
+	pm.initial_velocity_max = 1.4 * tile
+	pm.gravity = Vector3(0, -3.0, 0) * tile
+	pm.damping_min = 0.05 * tile
+	pm.damping_max = 0.2 * tile
+	pm.scale_min = 0.5
+	pm.scale_max = 1.5
+	pm.scale_curve = QuakeFX.curve([Vector2(0, 1), Vector2(0.8, 1), Vector2(1, 0)], 1.0)
+	pm.particle_flag_rotate_y = true
+	pm.angle_max = 360.0
+	pm.angular_velocity_min = -720.0
+	pm.angular_velocity_max = 720.0
+	pm.color_initial_ramp = QuakeFX.ramp([Color(0.75, 0.9, 1.0), Color(0.95, 1.0, 1.0), Color(1.0, 0.8, 0.55)], [0.0, 0.5, 1.0])
+	pm.collision_mode = ParticleProcessMaterial.COLLISION_RIGID
+	pm.collision_bounce = 0.25
+	pm.collision_friction = 0.6
+	pm.lifetime_randomness = 0.3
+	var g := QuakeFX.emitter(_fx, Transform3D(face, pos + n * 0.03 * tile), _glass_quad(), _q(45), 2.4, pm, true, 0.95)
+	g.collision_base_size = 0.02 * tile
+	g.visibility_aabb = AABB(Vector3(-4, -8, -4) * tile, Vector3(8, 10, 8) * tile)
+	# the fire gulps the fresh air: a tongue of flame bursts out
+	var fm := ParticleProcessMaterial.new()
+	fm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	fm.emission_box_extents = Vector3(WINDOW_W * 0.35, WINDOW_H * 0.3, 0.01) * tile
+	fm.direction = Vector3(0, 0.25, 1)
+	fm.spread = 30.0
+	fm.initial_velocity_min = 0.6 * tile
+	fm.initial_velocity_max = 1.3 * tile
+	fm.gravity = Vector3(0, 0.8, 0) * tile
+	fm.damping_min = 1.0 * tile
+	fm.damping_max = 1.6 * tile
+	_flame_look(fm, 0.2, 0.42)
+	var puff := QuakeFX.emitter(_fx, Transform3D(face, pos + n * 0.03 * tile), _flame_quad(), _q(40), 0.9, fm, true, 0.9)
+	puff.visibility_aabb = AABB(Vector3(-3, -2, -3) * tile, Vector3(6, 6, 6) * tile)
+	var flash := OmniLight3D.new()
+	flash.light_color = Color(1.0, 0.6, 0.25)
+	flash.omni_range = 1.8 * tile
+	flash.light_energy = 8.0
+	flash.shadow_enabled = false
+	_fx.add_child(flash)
+	flash.global_position = pos + n * 0.4 * tile
+	var tw := create_tween()
+	tw.tween_property(flash, "light_energy", 0.0, 0.6).set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_OUT)
+	tw.tween_callback(flash.queue_free)
+
+
+## Crackle sparks pop out of the broken windows only.
+func _update_crackle(e: Dictionary) -> void:
+	var p := e.get("crackle") as GPUParticles3D
+	if p == null:
+		return
+	var c := (e.box as AABB).get_center()
+	var pts := PackedVector3Array()
+	for w in e.windows:
+		if w.broken:
+			pts.append((w.pos as Vector3) + (w.n as Vector3) * 0.05 * tile - c)
+	if pts.is_empty():
+		pts.append(Vector3(0, (e.box as AABB).size.y * 0.5, 0))   # out of the roof
+	var pm := p.process_material as ParticleProcessMaterial
 	pm.emission_point_texture = _points_texture(pts)
 	pm.emission_point_count = pts.size()
-	pm.direction = Vector3.UP
-	pm.spread = 14.0
-	pm.initial_velocity_min = 0.3 * tile
-	pm.initial_velocity_max = 0.7 * tile
-	pm.gravity = Vector3(0.03, 0.65, 0.01) * tile
-	pm.damping_min = 0.2 * tile
-	pm.damping_max = 0.4 * tile
-	_flame_look(pm, 0.24, 0.5)
-	var p := QuakeFX.emitter(_fx, Transform3D(Basis(), c), _flame_quad(), _q(320), 0.95, pm, false, 0.0)
-	p.amount_ratio = 0.0
-	p.visibility_aabb = AABB(Vector3(-5, -3, -5) * tile, Vector3(10, 10, 10) * tile)
-	return p
+
+
+## A burnt window opening, brightest in the middle where the fire shows.
+static func _hole_texture() -> GradientTexture2D:
+	if _hole_tex_cache != null:
+		return _hole_tex_cache
+	var g := Gradient.new()
+	g.set_color(0, Color(1, 0.95, 0.8))
+	g.set_color(1, Color(0.12, 0.05, 0.02))
+	g.add_point(0.55, Color(0.85, 0.5, 0.25))
+	var t := GradientTexture2D.new()
+	t.gradient = g
+	t.fill = GradientTexture2D.FILL_RADIAL
+	t.fill_from = Vector2(0.5, 0.62)
+	t.fill_to = Vector2(1.05, 0.62)
+	t.width = 32
+	t.height = 32
+	_hole_tex_cache = t
+	return t
+
+
+## A small shard of window glass.
+func _glass_quad() -> BoxMesh:
+	if _glass_mesh != null:
+		return _glass_mesh
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.82, 0.94, 1.0, 0.85)
+	m.vertex_color_use_as_albedo = true
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.metallic = 0.85
+	m.roughness = 0.05
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	m.emission_enabled = true
+	m.emission = Color(1.0, 0.65, 0.35)
+	m.emission_energy_multiplier = 0.6
+	_glass_mesh = BoxMesh.new()
+	_glass_mesh.size = Vector3(0.03, 0.045, 0.004) * tile
+	_glass_mesh.material = m
+	return _glass_mesh
 
 
 ## A wall of flame along the roof.
@@ -896,7 +1147,7 @@ func _core_flames(box: AABB) -> GPUParticles3D:
 func _sparks(box: AABB) -> GPUParticles3D:
 	var pm := ParticleProcessMaterial.new()
 	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
-	pm.emission_box_extents = Vector3(box.size.x * 0.5, box.size.y * 0.25, box.size.z * 0.5)
+	pm.emission_box_extents = Vector3(box.size.x * 0.4, 0.05 * tile, box.size.z * 0.4)
 	pm.direction = Vector3.UP
 	pm.spread = 35.0
 	pm.initial_velocity_min = 1.0 * tile
@@ -915,7 +1166,7 @@ func _sparks(box: AABB) -> GPUParticles3D:
 	_spark_look(pm)
 	pm.lifetime_randomness = 0.6
 	var c := box.get_center()
-	var p := QuakeFX.emitter(_fx, Transform3D(Basis(), Vector3(c.x, box.end.y - box.size.y * 0.2, c.z)),
+	var p := QuakeFX.emitter(_fx, Transform3D(Basis(), Vector3(c.x, box.end.y, c.z)),
 		_spark_quad(), _q(170), 2.6, pm, false, 0.0)
 	_align_sparks(p)
 	p.amount_ratio = 0.0
@@ -927,7 +1178,8 @@ func _sparks(box: AABB) -> GPUParticles3D:
 ## _process drives the bursts through amount_ratio.
 func _crackle(box: AABB) -> GPUParticles3D:
 	var c := box.get_center()
-	var pts := _window_points(box, 14, 0.25, 0.9)
+	# filled in with the broken windows by _update_crackle
+	var pts := PackedVector3Array([Vector3(0, box.size.y * 0.5, 0)])
 	var pm := ParticleProcessMaterial.new()
 	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_POINTS
 	pm.emission_point_texture = _points_texture(pts)
@@ -1239,16 +1491,14 @@ func _points_texture(pts: PackedVector3Array) -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 
 
-## Darkens the building as it burns (and glows orange while the fire is hot):
-## a see-through layer drawn over every mesh, on top of any overlay it has.
+## Scorches the building a little as it burns (no orange glow: the fire shows
+## only through its broken windows): a see-through layer over every mesh, on
+## top of any overlay it has.
 func _char_material(b: Node3D) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	m.albedo_color = Color(0.035, 0.03, 0.028, 0.0)
 	m.roughness = 1.0
-	m.emission_enabled = true
-	m.emission = Color(1.0, 0.38, 0.1)
-	m.emission_energy_multiplier = 0.0
 	for n in b.find_children("*", "MeshInstance3D", true, false):
 		var mi := n as MeshInstance3D
 		var old := mi.material_overlay

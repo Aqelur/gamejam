@@ -5,6 +5,8 @@ extends Node3D
 ##   setup(city, cam)     darkens the city at once (do it while the screen is
 ##                        black), starts the rain around `cam` and the sound
 ##   set_indoors(on)      inside a room: no drops, rain muffled (room_quake.gd)
+##   stop()               the rain is over: drops, rain sound and thunder gone,
+##                        the sky stays grey and overcast
 ##
 ## Cheap to run on purpose:
 ##   * the drops are ONE GPUParticles3D of thin unshaded quads (AMOUNT of them)
@@ -63,6 +65,7 @@ var _next_thunder := FIRST_THUNDER
 var _flashes: Array[float] = []           # seconds until each pending flicker
 var _flash := 0.0
 var _base := {}
+var _stopped := false
 
 
 func setup(city: Node3D, cam: Camera3D) -> void:
@@ -84,7 +87,27 @@ func set_indoors(on: bool) -> void:
 			_drops.restart()
 
 
+## The rain is over: no more drops, rain or thunder. The overcast sky stays.
+func stop() -> void:
+	if _stopped:
+		return
+	_stopped = true
+	set_process(false)
+	_flashes.clear()
+	_flash = 0.0
+	_apply_flash()   # no lightning caught mid-flash: back to the plain overcast light
+	for n: Node in [_drops, _bed, _thunder]:
+		if is_instance_valid(n):
+			n.queue_free()
+	_drops = null
+	_bed = null
+	_thunder = null
+	# the sky stays grey and overcast (the dark look from _darken is kept)
+
+
 func _process(delta: float) -> void:
+	if _stopped:
+		return
 	_follow()
 
 	# sound fades in, quieter indoors
