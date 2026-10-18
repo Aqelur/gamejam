@@ -102,6 +102,8 @@ func _stop_street() -> void:
 
 
 func _loop_mp3(player: AudioStreamPlayer) -> void:
+	if player.stream == null:
+		return
 	var mp3 := player.stream.duplicate() as AudioStreamMP3
 	if mp3 == null:
 		return
@@ -110,6 +112,8 @@ func _loop_mp3(player: AudioStreamPlayer) -> void:
 
 
 func _loop_wav(player: AudioStreamPlayer) -> void:
+	if player.stream == null:
+		return
 	var wav := player.stream.duplicate() as AudioStreamWAV
 	if wav == null:
 		return
